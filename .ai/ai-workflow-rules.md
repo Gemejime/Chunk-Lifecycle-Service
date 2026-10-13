@@ -4,7 +4,7 @@
 
 This microservice is built incrementally using a **spec-driven, test-anchored workflow**.
 All architectural and implementation decisions derive from:
-1. The tracked specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `security.md`, `progress-tracker.md`)
+1. The tracked specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `doc-api.md`, `security.md`, `progress-tracker.md`)
 2. Local architecture and implementation blueprints in `tasks/` when present (`tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`, `tasks/Production Grade Backend Concepts.pdf`)
 
 Never invent behaviors, schemas, or RPC signatures outside these specifications without explicit user confirmation.
@@ -31,7 +31,7 @@ Never invent behaviors, schemas, or RPC signatures outside these specifications 
 1. **Scope Boundary**: Never implement out-of-scope features (e.g. 3-way AST token diffing, full text OCR, model weights hosting).
 2. **Doc API Mandate**:
    > **The "doc api" must ALWAYS be updated no matter how little the created or modified code is.**
-   > Every addition or alteration to externally exposed gRPC RPCs, Protobuf messages, HTTP routes, or OpenAPI endpoints must be documented in `api/openapi/openapi.yaml` and Protobuf comments in the exact same commit. Internal repository port contracts must be documented directly at their Go interfaces.
+   > Every addition or alteration to externally exposed gRPC RPCs, Protobuf messages, HTTP routes, or OpenAPI endpoints must be documented in `api/openapi/openapi.yaml` and Protobuf comments in the exact same commit. Internal repository port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules.
 3. **Secured Logging Mandate**:
    > **All logging must be strictly secured.**
    > Output structured JSON with `trace_id` and `tenant_id`. Redact all authorization tokens, credentials, and raw document chunk contents (log only safe hashes, chunk IDs, and token metrics).

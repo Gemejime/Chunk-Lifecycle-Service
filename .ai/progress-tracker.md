@@ -13,15 +13,16 @@ Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hash
 ## Completed
 - [x] Initialized Git repository structure and branch `rag-chunk-lifecycle-service`.
 - [x] Created comprehensive [.gitignore](.gitignore) excluding `tasks/`, binaries, logs, and profiling dumps.
-- [x] Installed `goimports` (`golang.org/x/tools/cmd/goimports`).
+- [x] Installed and verified `goimports` (`golang.org/x/tools/cmd/goimports`) and `golangci-lint` (v1.64.5).
 - [x] Upgraded and rewritten all `.ai/` specifications to match `rag-chunk-lifecycle-service`:
   - `project-overview.md` (SLIs/SLOs, core flows, scope & exclusions)
   - `architecture.md` (Hexagonal layout, Layer 1–5 backend concepts, ADRs)
   - `code-standards.md` (Go 1.23 idioms, Doc API update rule, Secured Logging)
+  - `doc-api.md` (OpenAPI 3.0+ specifications, Protobuf contracts, zero-drift synchronization workflows, and Doc API invariants)
   - `security.md` (Threat model, tenant isolation, Secured Logging invariants, distroless container safety)
   - `ai-workflow-rules.md` (Spec-driven workflow, human-in-the-loop prompts, pre-commit gates)
   - `agents.md` (Principal Go microservice AI engineer persona & execution protocol)
-- [x] Codified mandatory **Doc API** synchronization (ensuring API documentation is updated alongside any code changes).
+- [x] Codified mandatory **Doc API** synchronization (ensuring OpenAPI 3.0 and Protobuf API documentation is updated alongside any code changes).
 - [x] Codified mandatory **Secured Logging** invariants (structured JSON, token redaction, raw chunk masking).
 - [x] Created root [GEMINI.MD](GEMINI.MD) referencing `.ai/agents.md` and all `.ai/` manifests.
 - [x] Executed specification pressure-testing against `tasks/` blueprints and enhanced `.ai/` and `GEMINI.MD` with operational runbooks, production alert rules, PgBouncer pooling rules, outbox event schemas, and concrete test targets.
@@ -29,7 +30,7 @@ Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hash
 ---
 
 ## In Progress
-- [ ] Completing `golangci-lint` tool installation.
+- [ ] Phase 1 setup: Initializing Go module and repository structure.
 
 ---
 

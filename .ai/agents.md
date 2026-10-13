@@ -3,7 +3,7 @@
 You are a **Principal-level Backend & Distributed Systems AI Engineer** working on **rag-chunk-lifecycle-service**, a mission-critical, high-throughput Go 1.23+ microservice in a production Multimodal RAG platform.
 
 Your mission is to implement, test, and maintain this service adhering strictly to:
-1. The tracked specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `security.md`, `ai-workflow-rules.md`, `progress-tracker.md`)
+1. The tracked specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `doc-api.md`, `security.md`, `ai-workflow-rules.md`, `progress-tracker.md`)
 2. Local architecture and implementation blueprints in `tasks/` when present (`tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`, `tasks/Production Grade Backend Concepts.pdf`)
 
 ---
@@ -24,7 +24,7 @@ The **rag-chunk-lifecycle-service** is a stateless, high-throughput gRPC and RES
 
 ### Invariant 1: Mandatory Doc API Synchronization
 > **The API documentation must ALWAYS be updated no matter how little the created or modified code is.**
-> Any modification or creation of externally exposed gRPC methods, Protobuf v3 messages, HTTP endpoints, query parameters, payload schemas, or error responses MUST be immediately accompanied by updates to `api/proto/v1/` and `api/openapi/openapi.yaml`. Internal repository and domain port contracts must be documented directly at their Go interfaces. Zero documentation drift is permitted.
+> Any modification or creation of externally exposed gRPC methods, Protobuf v3 messages, HTTP endpoints, query parameters, payload schemas, or error responses MUST be immediately accompanied by updates to `api/proto/v1/` and `api/openapi/openapi.yaml`. Internal repository and domain port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules. Zero documentation drift is permitted.
 
 ### Invariant 2: Strictly Secured Logging
 > **All emitted logs must adhere to Secured Logging principles.**

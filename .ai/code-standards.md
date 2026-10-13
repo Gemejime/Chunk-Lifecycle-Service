@@ -27,6 +27,7 @@
 > [!IMPORTANT]
 > **Mandatory Doc API Synchronization**:
 > The API documentation (`api/openapi/openapi.yaml`, Protobuf comments in `api/proto/v1/`, and endpoint specifications) **MUST ALWAYS be updated whenever any API code is created or modified, no matter how small or incremental the change is.**
+> For detailed architectural guidelines, workflow sequences, and OpenAPI schemas, refer directly to [.ai/doc-api.md](doc-api.md).
 
 ### Enforcement Rules:
 1. **gRPC & Protobuf Schemas**:

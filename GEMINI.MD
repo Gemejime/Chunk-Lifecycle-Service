@@ -16,6 +16,7 @@ Before generating plans, designing components, or writing code, you **MUST** rea
    - [.ai/project-overview.md](.ai/project-overview.md) — Service definition, SLIs/SLOs ($P99 \le 120\text{ms}$ compilation, $\ge 25{,}000\text{ chunks/sec}$ ingestion, $P99 \le 8\text{ms}$ context reads), core flows, and scope boundaries.
    - [.ai/architecture.md](.ai/architecture.md) — Hexagonal boundaries, PostgreSQL 16 + Redis 7.2 storage model, Layer 1–5 backend concepts, and Architectural Decision Records (ADRs 001–004).
    - [.ai/code-standards.md](.ai/code-standards.md) — Go 1.23 idioms, zero-cgo runtime, error handling, testing suites, and API documentation rules.
+   - [.ai/doc-api.md](.ai/doc-api.md) — OpenAPI 3.0+ specifications, Protobuf contracts, zero-drift synchronization workflows, and Doc API invariants.
    - [.ai/security.md](.ai/security.md) — Multi-tenant isolation, threat models, Secured Logging invariants, and distroless container posture.
    - [.ai/ai-workflow-rules.md](.ai/ai-workflow-rules.md) — Spec-driven implementation rules, prompt-approval loops, and pre-commit verification gates.
    - [.ai/progress-tracker.md](.ai/progress-tracker.md) — Current phase status, completed tasks, and upcoming milestones.
@@ -25,7 +26,7 @@ Before generating plans, designing components, or writing code, you **MUST** rea
 ## 2. Core Directives & Invariants
 
 ### A. Mandatory Doc API Synchronization
-> **CRITICAL RULE**: The "doc api" must ALWAYS be updated no matter how little the created or modified code is.
+> **CRITICAL RULE**: The "doc api" must ALWAYS be updated no matter how little the created or modified code is. See [.ai/doc-api.md](.ai/doc-api.md) for complete standards.
 - Any change to externally exposed gRPC service definitions (`api/proto/v1/chunk_service.proto`, `types.proto`), HTTP handlers, or REST routes **MUST** be mirrored immediately in:
   1. `api/openapi/openapi.yaml` (paths, parameters, request bodies, response models, status codes).
   2. Protobuf schema documentation comments.
