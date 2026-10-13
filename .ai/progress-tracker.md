@@ -24,12 +24,13 @@ Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hash
   - `agents.md` (Principal Go microservice AI engineer persona & execution protocol)
 - [x] Codified mandatory **Doc API** synchronization (ensuring API documentation is updated alongside any code changes).
 - [x] Codified mandatory **Secured Logging** invariants (structured JSON, token redaction, raw chunk masking).
+- [x] Created root [GEMINI.MD](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/GEMINI.MD) referencing `.ai/agents.md` and all `.ai/` manifests.
+- [x] Executed specification pressure-testing against `tasks/` blueprints and enhanced `.ai/` and `GEMINI.MD` with operational runbooks, production alert rules, PgBouncer pooling rules, outbox event schemas, and concrete test targets.
 
 ---
 
 ## In Progress
 - [ ] Completing `golangci-lint` tool installation.
-- [ ] Creating root [GEMINI.MD](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/GEMINI.MD) referencing `.ai/agents.md` and all `.ai/` manifests.
 
 ---
 

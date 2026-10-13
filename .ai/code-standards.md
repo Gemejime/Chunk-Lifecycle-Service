@@ -11,6 +11,10 @@
   - Always bound goroutine lifecycles using worker pools or semaphore patterns (`errgroup.Group`).
   - Never spawn unbounded goroutines per request.
   - Context propagation (`context.Context`) is mandatory across all function signatures touching I/O.
+- **PgBouncer Transaction Pooling Compatibility**:
+  - When configuring `pgxpool.Config` (`github.com/jackc/pgx/v5`), explicitly set `ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec` (or DSN parameter `default_query_exec_mode = exec`).
+  - This prevents client-side prepared statement cache errors when routing through PgBouncer transaction pooling.
+  - Never utilize session-scoped temporary tables or session-level locks across pooled transactions.
 - **Code Formatting & Linters**:
   - Format all Go files with `goimports`.
   - Pass all rules configured in `golangci-lint` (errcheck, govet, staticcheck, sloglint, gocyclo, gosec).
@@ -59,14 +63,21 @@
 All test suites must be maintained alongside implementation code:
 
 - **Unit Tests (`test/unit/`)**:
-  - In-memory tests for the context compiler, SHA-256 content hasher, section reconciler, and quarantine logic.
+  - In-memory tests for context compilation, SHA-256 hashing, section reconciliation, and quarantine logic.
   - Run with race detector: `go test -v -race ./test/unit/...`.
   - Enforce table-driven testing pattern.
+  - *Content Hash Stability*: Assert that paragraphs prefixed with new upstream whitespace, shifted page offsets, or identical semantic content yield the exact same `ChunkID`.
+  - *Parent-Child Compilation Boundaries*: Validate that fine-grained child chunks enforce 100–300 token budgets and parent containers remain bounded within 800–1,500 tokens across nested heading hierarchies.
+  - *Section Override Logic*: Verify that clean upstream updates auto-advance the document version, while upstream edits to an active section key deterministically trigger `SECTION_STALE_QUARANTINE`.
 - **Integration Tests (`test/integration/`)**:
-  - Live tests against **PostgreSQL 16** (PgBouncer-compatible connection pool, transactional outbox atomicity, unnest/COPY staging) and **Redis 7.2** using Testcontainers or service containers.
+  - Live tests against **PostgreSQL 16** (PgBouncer-compatible connection pool, transactional outbox atomicity, unnest/COPY staging) and **Redis 7.2** using Testcontainers.
   - Run with: `go test -v -race -tags=integration ./test/integration/...`.
+  - *Batch Ingestion Throughput*: Ingest 50,000 chunks in a single pipeline run using the batch writer adapter against PostgreSQL Testcontainers. Verify that batch unnest/COPY constructs execute within connection pool allowances without deadlocking.
+  - *Transactional Outbox Atomicity*: Mutate a child chunk; verify within the exact same database transaction that the patch ledger updates, the parent container recompiles, and the `ChunkRevectorizationRequired` event is committed to the outbox table.
+  - *Read-Path Isolation*: Execute heavy bulk ingestion streams concurrently with 2,000 RPS context assembly queries directed to Redis/read-replicas. Verify that read latencies remain strictly $P99 \le 8\text{ms}$ unaffected by transaction lock queues.
 - **Performance & Stress Tests (`test/performance/`)**:
-  - Benchmark sustained throughput ($\ge 25{,}000\text{ chunks/sec}$) and verify RSS remains strictly below $1.2\text{ GiB}$ using `go tool pprof`.
+  - *Heap Allocation Profiles*: Run sustained 30-minute stress tests at 25,000 chunks/sec while profiling heap allocations via Go `pprof`. Ensure GC cycles keep pod RSS strictly below $1.2\text{ GiB}$ ($1.5\text{ GiB}$ hard limit) without memory accumulation.
+  - *Backpressure Verification*: Flood gRPC ingestion streams beyond database write capacity; verify that bounded channel backpressure properly signals upstream coordinators via `codes.ResourceExhausted` without triggering pod OOM kills.
 
 ---
 
