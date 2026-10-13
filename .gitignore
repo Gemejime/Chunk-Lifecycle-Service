@@ -1,0 +1,65 @@
+# Tasks and planning specifications (as requested)
+tasks/
+
+# Binaries and build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+chunk-server
+reconciliation-worker
+rag-chunk-lifecycle-service
+
+# Go workspace and vendor
+vendor/
+go.work
+go.work.sum
+
+# Test & coverage artifacts
+coverage.out
+coverage.html
+profile.out
+*.pprof
+*.cpu
+*.mem
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+
+# IDE and Editor directories
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Container and local run caches
+.docker/
+docker-compose.override.yml
+
+# Temporary and log files
+tmp/
+*.log
+logs/
