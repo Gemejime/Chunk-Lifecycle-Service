@@ -64,6 +64,44 @@ It operates as the foundational data and consistency plane within the multimodal
 | **Staged Bulk Database Ingestion** | High-throughput batch writer leveraging PostgreSQL `COPY` / array unnesting via PgBouncer. |
 | **Quarantine Management API** | Administrative REST & gRPC endpoints for operator inspection, accept-upstream, and reapply-override actions. |
 
+### Module Specifications
+
+#### A. Transactional Outbox Event Contract (`ChunkRevectorizationRequired`)
+When child chunks are mutated, parent containers recompiled, or manual patches reconciled, the service commits an atomic event to the `outbox_events` table within the same transaction:
+```json
+{
+  "event_id": "c1f7b8d0-9d2a-4f51-b8cf-8956e297801a",
+  "event_type": "ChunkRevectorizationRequired",
+  "aggregate_type": "DocumentManifest",
+  "aggregate_id": "doc-849204",
+  "tenant_id": "tenant-4912",
+  "manifest_version": 3,
+  "parent_id": "sha256-parent-container-id",
+  "child_chunk_ids": [
+    "sha256-child-chunk-id-1",
+    "sha256-child-chunk-id-2"
+  ],
+  "trigger_reason": "PATCH_APPLIED", // Values: PATCH_APPLIED | CDC_RECONCILED | QUARANTINE_OVERRIDDEN
+  "timestamp_utc": 1776057600
+}
+```
+Debezium captures this change via PostgreSQL logical decoding (WAL tailing) and pushes the event to Kafka topic `rag.chunk.revectorization` for downstream consumption by `rag-inference-serving`.
+
+#### B. Staged Bulk Database Ingestion Architecture
+To sustain $\ge 25{,}000\text{ chunks/sec}$ without exhausting connection pool resources or overloading write-ahead logs:
+1. High-velocity gRPC chunk streams stream directly into an unlogged staging table:
+   - Table: `unlogged_chunk_staging (staging_batch_id, tenant_id, content, structural_path, token_count, created_at)`
+   - Bypass row-by-row `INSERT` statements using PostgreSQL binary `COPY` protocol.
+2. Once the batch buffer seals ($\ge 500$ chunks or $50\text{ms}$ timeout), the service executes batch manifest promotion via `unnest()` array inserts into the permanent `chunk_nodes` and `document_manifests` tables.
+3. The staging batch rows are immediately cleared upon promotion, avoiding disk accumulation and table bloat.
+
+#### C. Quarantine Management REST API
+Administrative endpoints allow operators to review and resolve stale section quarantine flags:
+- `GET /v1/conflicts/quarantine` — Query all active sections flagged as `SECTION_STALE_QUARANTINE` with pagination, filterable by `tenant_id` and `document_id`.
+- `GET /v1/conflicts/{id}` — Retrieve side-by-side text diffs and structural metadata between the operator's patch and the newly ingested CDC upstream section.
+- `POST /v1/conflicts/{id}/accept-upstream` — Discard the operator patch, acknowledge the upstream CDC text as authoritative, and advance the active manifest version.
+- `POST /v1/conflicts/{id}/reapply-override` — Force-overwrite the section with the operator's manual edits, update the base hash, and trigger parent-child re-compilation with outbox event egress.
+
 ---
 
 ## 5. Scope & Exclusions

@@ -91,17 +91,37 @@ rag-chunk-lifecycle-service/
 ### Layer 5: Observability & Quality
 - **Structured Telemetry**: Contextual JSON logs with `trace_id`, `span_id`, and `tenant_id`.
 - **Prometheus Metrics**:
-  - `chunk_ingestion_chunks_per_second`
-  - `chunk_compilation_duration_seconds`
-  - `chunk_section_stale_quarantine_total`
-  - `chunk_parent_lookup_duration_seconds`
-  - `go_memstats_alloc_bytes`
+  - `chunk_ingestion_chunks_per_second`: Rate of incoming processed child chunks.
+  - `chunk_compilation_duration_seconds`: Histogram measuring parent compilation latency.
+  - `chunk_section_stale_quarantine_total`: Counter tracking patches flagged as stale due to CDC updates.
+  - `chunk_parent_lookup_duration_seconds`: Histogram measuring online retrieval serving latency.
+  - `go_memstats_alloc_bytes`: Memory allocation telemetry tracking heap growth.
+- **Production Alert Rules**:
+  - *Quarantine Spike*: Fires if `chunk_section_stale_quarantine_total` increases by $>2\%$ of active CDC runs over 10 minutes.
+  - *P99 Compilation Latency Degradation*: Fires if compilation duration exceeds $200\text{ms}$ for $>5\text{ minutes}$.
+  - *High Memory Pressure*: Fires if pod memory usage exceeds $80\%$ of the $1.5\text{ GiB}$ limit ($>1.2\text{ GiB}$) for $>2\text{ minutes}$.
 - **Health Probes**: Liveness (`/healthz`) and Readiness (`/ready`) endpoints verifying database pool connectivity and Redis ping response.
 - **Graceful Termination**: Intercepts SIGTERM/SIGINT, closes gRPC listeners, drains in-flight unnest batches, and closes PgBouncer pools gracefully.
 
 ---
 
-## 4. Non-Negotiable Architectural Invariants
+## 4. Operational Runbooks
+
+- **Runbook 1: Clearing Quarantined Section Overrides**:
+  1. Query `GET /v1/conflicts/quarantine` to inspect sections flagged as `SECTION_STALE_QUARANTINE`.
+  2. Review side-by-side text diffs between the operator's patch and the newly ingested CDC upstream section.
+  3. Invoke `POST /v1/conflicts/{id}/accept-upstream` to discard the operator patch and index the upstream content, or `POST /v1/conflicts/{id}/reapply-override` to overwrite the section with the operator's edits and compile a new manifest version.
+- **Runbook 2: Ingestion Backpressure & Connection Pool Saturation**:
+  1. Check `chunk_db_pool_active_connections` and PgBouncer queue wait latencies.
+  2. If wait times exceed $20\text{ms}$, ensure write batch sizes are tuned to $\ge 500$ chunks per batch transaction.
+  3. Verify that upstream ingestion coordinators respect gRPC `codes.ResourceExhausted` backpressure error codes.
+- **Runbook 3: Redis Cache Drift Recovery**:
+  1. If `chunk_parent_lookup_miss_rate` spikes, verify Redis cluster node availability.
+  2. Execute the re-cache CLI utility (`cmd/reconciliation-worker --task=warm-parent-cache --manifest-id=...`) to backfill Redis from the PostgreSQL read replica without touching primary write-plane tables.
+
+---
+
+## 5. Non-Negotiable Architectural Invariants
 
 1. **Content-Addressable Chunk Identities (ADR-001)**: Chunk identities are immutable functions of $\text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$. Never use volatile character/token offsets as primary identities.
 2. **Pragmatic Section-Key Invalidation (ADR-002)**: Upstream CDC mutations against a manually patched section trigger `SECTION_STALE_QUARANTINE`. Never attempt speculative 3-way AST token rebasing.
@@ -111,7 +131,7 @@ rag-chunk-lifecycle-service/
 
 ---
 
-## 5. Git Commit Standards
+## 6. Git Commit Standards
 - **Git Commit Frequency**: Commit code as you build. Every working session or phase must contain **at least two git commits**.
 - **Conventional Commit Patterns**: All git commit messages must strictly adhere to the following prefixes:
   - `feat:` for new features 
@@ -120,4 +140,5 @@ rag-chunk-lifecycle-service/
   - `docs:` for documentation updates
   - `tests:` for tests addition and modification
   - `chore:` for maintenance tasks and environment setup
+
 
