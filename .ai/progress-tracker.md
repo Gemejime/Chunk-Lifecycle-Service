@@ -26,20 +26,32 @@ Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hash
 - [x] Codified mandatory **Secured Logging** invariants (structured JSON, token redaction, raw chunk masking).
 - [x] Created root [GEMINI.MD](GEMINI.MD) referencing `.ai/agents.md` and all `.ai/` manifests.
 - [x] Executed specification pressure-testing against `tasks/` blueprints and enhanced `.ai/` and `GEMINI.MD` with operational runbooks, production alert rules, PgBouncer pooling rules, outbox event schemas, and concrete test targets.
+- [x] Hardened [prompts/phase-1-content-addressing-and-data-plane.md](prompts/phase-1-content-addressing-and-data-plane.md) with relational junction bindings (`manifest_chunk_bindings`), Unicode NFC normalization pipeline, `Makefile`/`buf` codegen tooling, and `SectionPatch` state machine test coverage.
+- [x] Initialized Go module (`github.com/Gemejime/rag-chunk-lifecycle-service`) with production dependencies (`pgx/v5`, `protobuf`, `grpc`, `uuid`, `text`).
+- [x] Created development tooling: `Makefile`, `buf.yaml`, `buf.gen.yaml`, and GitHub Actions CI workflow (`.github/workflows/ci.yml`).
+- [x] Synchronized Doc API contracts (Protobuf v3 `types.proto`, `chunk_service.proto`, generated Go stubs `types.pb.go`, `chunk_service.pb.go`, `chunk_service_grpc.pb.go`, and OpenAPI 3.0.3 `api/openapi/openapi.yaml`).
+- [x] Implemented Hexagonal Domain Layer:
+  - Entities (`DocumentManifest`, `ChunkNode`, `ParentContainer`, `SectionPatch`) and strongly-typed sentinel domain errors (`internal/domain/entity/errors.go`).
+  - Content Hasher (`internal/domain/compiler/content_hasher.go`) adhering to ADR-001 (Unicode NFC normalization, CRLF to LF, whitespace collapsing, 8-byte big-endian framing).
+  - Domain Repository port contracts (`ManifestRepository`, `ChunkRepository`, `PatchRepository`, `OutboxRepository`).
+- [x] Implemented Relational Storage & Staging Infrastructure:
+  - PostgreSQL 16 schema migrations (`000001_initial_schema.up.sql` and `000001_initial_schema.down.sql`) with unlogged staging, monotonic version manifests, junction bindings, and transactional outbox.
+  - PgBouncer-compatible connection pool adapter (`pool.go`) enforcing `DefaultQueryExecMode = QueryExecModeExec` and credential redaction.
+  - High-velocity staging adapter (`batch_writer.go`) leveraging transactional `COPY` and atomic promotion.
+  - PostgreSQL Manifest repository (`manifest_repo.go`) and Outbox repository (`outbox_repo.go`).
+- [x] Built comprehensive unit test suites (`test/unit/content_hasher_test.go` and `test/unit/domain_entity_test.go`) validating 100% test pass rate.
 
 ---
 
 ## In Progress
-- [ ] Phase 1 setup: Initializing Go module and repository structure.
+- [ ] Phase 1 review and preparation for Phase 2 (Compiler & Redis Read Plane).
 
 ---
 
 ## Next Up
-1. Initialize Go module: `go mod init github.com/Gemejime/rag-chunk-lifecycle-service`.
-2. Configure GitHub Actions CI/CD workflow (`.github/workflows/ci.yml`) with Go 1.23, Protobuf linting, PostgreSQL 16 & Redis 7.2 service containers, and `govulncheck`.
-3. Define Protobuf v3 contracts (`api/proto/v1/chunk_service.proto`, `types.proto`) and initial OpenAPI spec (`api/openapi/openapi.yaml`).
-4. Implement domain entities (`DocumentManifest`, `ChunkNode`, `ParentContainer`, `SectionPatch`) and deterministic SHA-256 hasher (`internal/domain/compiler/content_hasher.go`).
-5. Author PostgreSQL 16 schema migrations (`internal/infrastructure/persistence/migrations/000001_initial_schema.up.sql`).
+1. Implement Phase 2 parent-child context compilation engine (`internal/domain/compiler/parent_child_compiler.go`).
+2. Integrate Redis 7.2 cluster cache adapter (`internal/infrastructure/cache/redis/`) for sub-8ms P99 retrieval.
+3. Construct gRPC and REST transport handlers (`internal/transport/grpc/`, `internal/transport/http/`).
 
 ---
 
