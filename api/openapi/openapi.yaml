@@ -1,0 +1,401 @@
+openapi: 3.0.3
+info:
+  title: RAG Chunk Lifecycle Service API
+  description: >
+    Production-grade microservice for document versioning, content-addressed chunking,
+    parent context compilation, and section-level CDC invalidation.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development environment
+
+paths:
+  /v1/tenants/{tenant_id}/documents/{document_id}/chunks:batch:
+    post:
+      summary: Batch Ingest Chunks
+      description: >
+        Submits a batch of child chunks for staging into unlogged tables and subsequent atomic promotion
+        to immutable content-addressed chunk nodes and document manifests.
+      operationId: BatchIngestChunks
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+            example: "tenant-corp-1"
+        - name: document_id
+          in: path
+          required: true
+          description: Unique identifier of the document aggregate root.
+          schema:
+            type: string
+            example: "doc-manual-998"
+        - name: X-Trace-ID
+          in: header
+          required: false
+          description: Distributed tracing trace identifier for request correlation.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIngestRequest'
+      responses:
+        '202':
+          description: Batch accepted for staging and promotion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIngestResponse'
+        '400':
+          description: Invalid chunk parameters or token budget violation (budget 100-300 tokens).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Document manifest version conflict or concurrent modification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded or database write queue backpressure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/conflicts/quarantine:
+    get:
+      summary: List Quarantined Patches
+      description: Lists operator section patches currently in SECTION_STALE_QUARANTINE status.
+      operationId: ListQuarantinedPatches
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records to return (1-100).
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of quarantined patches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuarantineListResponse'
+        '400':
+          description: Invalid query parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/conflicts/{id}:
+    get:
+      summary: Get Quarantine Conflict Details
+      description: Retrieves side-by-side comparison between the operator patch and upstream CDC modification.
+      operationId: GetQuarantineConflict
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the quarantined patch.
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_id
+          in: query
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Quarantine conflict details with side-by-side content hashes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuarantineConflictDetail'
+        '404':
+          description: Quarantined patch not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/conflicts/{id}/accept-upstream:
+    post:
+      summary: Accept Upstream CDC Content
+      description: Discards the quarantined operator patch and accepts the upstream CDC mutation.
+      operationId: AcceptUpstreamCDC
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the quarantined patch.
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_id
+          in: query
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upstream content accepted; patch marked as SUPERSEDED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveConflictResponse'
+        '404':
+          description: Quarantined patch not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/conflicts/{id}/reapply-override:
+    post:
+      summary: Reapply Operator Override
+      description: Overrides the upstream CDC mutation, restoring the operator patch and advancing the manifest.
+      operationId: ReapplyOperatorOverride
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the quarantined patch.
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_id
+          in: query
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operator override reapplied; patch reactivated and manifest compiled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveConflictResponse'
+        '404':
+          description: Quarantined patch not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    BatchIngestRequest:
+      type: object
+      required:
+        - batch_id
+        - manifest_version
+        - chunks
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+          example: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+        manifest_version:
+          type: integer
+          format: int64
+          example: 1
+        chunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChunkPayload'
+
+    ChunkPayload:
+      type: object
+      required:
+        - content
+        - token_count
+        - structural_path
+        - byte_offset_start
+        - byte_offset_end
+      properties:
+        parent_id:
+          type: string
+          example: "parent-sec-1"
+        content:
+          type: string
+          description: Normalized chunk text.
+          example: "Production-grade microservices require clean domain boundaries."
+        token_count:
+          type: integer
+          description: Token count strictly between 100 and 300.
+          minimum: 100
+          maximum: 300
+          example: 180
+        structural_path:
+          type: string
+          description: Hierarchical document section path.
+          example: "doc-manual-998/sec_1/para_1"
+        byte_offset_start:
+          type: integer
+          format: int64
+          example: 0
+        byte_offset_end:
+          type: integer
+          format: int64
+          example: 256
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    BatchIngestResponse:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        chunks_processed:
+          type: integer
+        chunks_deduplicated:
+          type: integer
+        manifest_version:
+          type: integer
+          format: int64
+        status:
+          type: string
+          example: "ACCEPTED"
+
+    QuarantineListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionPatchItem'
+        next_cursor:
+          type: string
+
+    SectionPatchItem:
+      type: object
+      properties:
+        patch_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+        document_id:
+          type: string
+        section_key:
+          type: string
+        base_content_hash:
+          type: string
+        status:
+          type: string
+          enum: [SECTION_STALE_QUARANTINE, ACTIVE, SUPERSEDED]
+        operator_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    QuarantineConflictDetail:
+      type: object
+      properties:
+        patch_id:
+          type: string
+          format: uuid
+        section_key:
+          type: string
+        operator_patch_hash:
+          type: string
+        operator_content:
+          type: string
+        upstream_cdc_hash:
+          type: string
+        upstream_content:
+          type: string
+        conflict_detected_at:
+          type: string
+          format: date-time
+
+    ResolveConflictResponse:
+      type: object
+      properties:
+        patch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        message:
+          type: string
+        manifest_version:
+          type: integer
+          format: int64
+
+    ErrorResponse:
+      type: object
+      required:
+        - error_code
+        - message
+        - trace_id
+      properties:
+        error_code:
+          type: string
+          example: "INVALID_ARGUMENT"
+        message:
+          type: string
+          example: "Chunk token count must be between 100 and 300."
+        trace_id:
+          type: string
+          example: "trc-8973b-e10"

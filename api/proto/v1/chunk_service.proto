@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package chunk.v1;
+
+option go_package = "github.com/Gemejime/rag-chunk-lifecycle-service/api/proto/v1;chunkv1";
+
+import "api/proto/v1/types.proto";
+
+// ChunkLifecycleService provides high-throughput chunk streaming ingestion,
+// parent context container compilation and retrieval, and section-level CDC reconciliation.
+service ChunkLifecycleService {
+  // BatchIngestChunks accepts a client-side stream of chunk records and stages them
+  // into unlogged staging buffers before promoting them atomically to immutable chunk nodes.
+  //
+  // Invariants:
+  // - Child chunk token count must be between 100 and 300 tokens (codes.InvalidArgument).
+  // - Tenant isolation is enforced via tenant_id on all records.
+  // - Under database write saturation, returns codes.ResourceExhausted backpressure.
+  rpc BatchIngestChunks(stream IngestChunkRequest) returns (IngestChunkResponse);
+
+  // GetParentContainer retrieves a compiled parent context container by parent_id
+  // and version from the low-latency read plane (Redis 7.2 Cluster / Read Replicas).
+  //
+  // Invariants:
+  // - Sub-8ms P99 latency target.
+  // - Returns codes.NotFound if the container does not exist.
+  rpc GetParentContainer(GetParentContainerRequest) returns (GetParentContainerResponse);
+
+  // ReconcileCDCUpdate evaluates an incoming upstream CDC change against the section patch ledger.
+  // If an active operator patch exists for the section and its base hash does not match,
+  // the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
+  rpc ReconcileCDCUpdate(ReconcileCDCRequest) returns (ReconcileCDCResponse);
+}
+
+// IngestChunkRequest represents an individual chunk within a batch ingestion stream.
+message IngestChunkRequest {
+  // batch_id groups chunks into a single transactional unlogged staging partition.
+  string batch_id = 1;
+  // chunk contains the child chunk node data to ingest.
+  ChunkNode chunk = 2;
+  // document_id identifies the parent document aggregate root.
+  string document_id = 3;
+  // manifest_version is the target document version.
+  int64 manifest_version = 4;
+}
+
+// IngestChunkResponse provides the result summary for a completed batch ingestion stream.
+message IngestChunkResponse {
+  // batch_id echoes the processed batch UUID.
+  string batch_id = 1;
+  // chunks_processed is the total number of chunks received in the stream.
+  int32 chunks_processed = 2;
+  // chunks_deduplicated is the number of chunks that already existed (content-addressed hit).
+  int32 chunks_deduplicated = 3;
+  // manifest_version is the document manifest version updated or created.
+  int64 manifest_version = 4;
+  // success indicates whether the batch was successfully promoted.
+  bool success = 5;
+}
+
+// GetParentContainerRequest specifies the lookup parameters for parent context retrieval.
+message GetParentContainerRequest {
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 1;
+  // parent_id is the unique identifier of the requested parent container.
+  string parent_id = 2;
+  // manifest_version is the version to retrieve (0 indicates latest active version).
+  int64 manifest_version = 3;
+}
+
+// GetParentContainerResponse returns the compiled parent container.
+message GetParentContainerResponse {
+  // container is the compiled parent context container.
+  ParentContainer container = 1;
+}
+
+// ReconcileCDCRequest submits an upstream CDC section update for reconciliation.
+message ReconcileCDCRequest {
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 1;
+  // document_id identifies the document containing the section.
+  string document_id = 2;
+  // section_key denotes the structural section identifier (e.g., "doc_uuid/sec_4").
+  string section_key = 3;
+  // upstream_content_hash is the SHA-256 hash of the incoming upstream content.
+  string upstream_content_hash = 4;
+  // upstream_content is the raw or normalized content from the upstream CDC mutation.
+  string upstream_content = 5;
+}
+
+// ReconcileCDCResponse reports the outcome of the reconciliation evaluation.
+message ReconcileCDCResponse {
+  // quarantined indicates whether the section was flagged as SECTION_STALE_QUARANTINE.
+  bool quarantined = 1;
+  // patch_id identifies the conflicting operator patch if quarantined.
+  string patch_id = 2;
+  // message describes the reconciliation action taken.
+  string message = 3;
+  // new_manifest_version indicates the resulting document version if promoted.
+  int64 new_manifest_version = 4;
+}
