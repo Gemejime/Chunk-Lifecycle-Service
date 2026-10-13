@@ -43,7 +43,9 @@ rag-chunk-lifecycle-service/
 │   │   ├── command/           # IngestChunkBatch, ApplySectionPatch, ReconcileCDCUpdate
 │   │   └── query/             # GetParentContainer, ListQuarantinedPatches
 │   ├── infrastructure/        # Adapters & external drivers
-│   │   ├── persistence/postgres/ # PgBouncer pool, COPY/unnest batch writer, outbox repo, migrations/
+│   │   ├── persistence/
+│   │   │   ├── postgres/      # PgBouncer pool, COPY/unnest batch writer, outbox repo
+│   │   │   └── migrations/    # Versioned SQL migrations
 │   │   ├── cache/redis/       # Versioned parent cache client
 │   │   └── flight/            # Apache Arrow Flight receiver adapter
 │   └── transport/             # Entrypoint adapters
@@ -80,7 +82,7 @@ rag-chunk-lifecycle-service/
 
 ### Layer 3: Architecture & Scale
 - **Process Separation (ADR-003)**: Ingress gRPC server and CDC reconciliation worker run as distinct workloads, eliminating event loop starvation and thread contention.
-- **Memory Ceiling & Allocator Pools**: Memory request 512 MiB, limit 1.5 GiB. Reusable byte buffers managed via `sync.Pool` to ensure RSS stability $<1.2\text{ GiB}$ under 25k chunks/sec sustained load.
+- **Memory Ceiling & Allocator Pools**: Enforce explicit in-flight byte and per-buffer size limits independent of `sync.Pool`, treating `sync.Pool` strictly as an allocation reuse optimization rather than a memory boundary. Stress-test total pod RSS to remain stably below the $1.2\text{ GiB}$ operating target under 25k chunks/sec sustained load; the $1.5\text{ GiB}$ container limit serves only as an outer safety cap.
 - **High Availability**: Kubernetes PodDisruptionBudget enforcing `minAvailable: 2` and inter-pod anti-affinity across availability zones.
 
 ### Layer 4: Security & Identity
@@ -123,7 +125,7 @@ rag-chunk-lifecycle-service/
 
 ## 5. Non-Negotiable Architectural Invariants
 
-1. **Content-Addressable Chunk Identities (ADR-001)**: Chunk identities are immutable functions of $\text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$. Never use volatile character/token offsets as primary identities.
+1. **Content-Addressable Chunk Identities (ADR-001)**: All chunk and context IDs derive from $\text{SHA256}$ over canonical 8-byte big-endian length-prefixed UTF-8 encoded fields: $\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath}$. Never use volatile character/token offsets as primary identities.
 2. **Pragmatic Section-Key Invalidation (ADR-002)**: Upstream CDC mutations against a manually patched section trigger `SECTION_STALE_QUARANTINE`. Never attempt speculative 3-way AST token rebasing.
 3. **Decoupled Read Serving (ADR-004)**: Context retrieval queries MUST never touch primary write-plane tables directly during runtime serving; they MUST be satisfied by Redis or read replicas.
 4. **Mandatory Doc API Updates**: Every change to an RPC, handler, schema, or endpoint contract MUST be reflected immediately in `api/proto/v1/` comments and `api/openapi/openapi.yaml`.

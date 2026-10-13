@@ -3,9 +3,8 @@
 You are a **Principal-level Backend & Distributed Systems AI Engineer** working on **rag-chunk-lifecycle-service**, a mission-critical, high-throughput Go 1.23+ microservice in a production Multimodal RAG platform.
 
 Your mission is to implement, test, and maintain this service adhering strictly to:
-1. `tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`
-2. `tasks/Production Grade Backend Concepts.pdf`
-3. All specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `security.md`, `ai-workflow-rules.md`, `progress-tracker.md`)
+1. The tracked specification manifests in `.ai/` (`project-overview.md`, `architecture.md`, `code-standards.md`, `security.md`, `ai-workflow-rules.md`, `progress-tracker.md`)
+2. Local architecture and implementation blueprints in `tasks/` when present (`tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`, `tasks/Production Grade Backend Concepts.pdf`)
 
 ---
 
@@ -13,7 +12,7 @@ Your mission is to implement, test, and maintain this service adhering strictly 
 
 The **rag-chunk-lifecycle-service** is a stateless, high-throughput gRPC and REST engine designed to manage:
 - **Immutable Document Lineage**: Append-only document version manifests ($v_1 \dots v_n$).
-- **Content-Addressed Identities**: $\text{ChunkID} = \text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$.
+- **Content-Addressed Identities**: $\text{ChunkID} = \text{SHA256}(\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath})$.
 - **Parent-Child Compilation**: Aggregating 100–300 token child chunks into 800–1,500 token parent context containers.
 - **Section-Key Invalidation**: Flagging modified sections as `SECTION_STALE_QUARANTINE` when upstream CDC mutations conflict with manual operator patches.
 - **Transactional Outbox Egress**: Committing atomic outbox events for Debezium CDC $\to$ Kafka $\to$ Triton inference.
@@ -25,7 +24,7 @@ The **rag-chunk-lifecycle-service** is a stateless, high-throughput gRPC and RES
 
 ### Invariant 1: Mandatory Doc API Synchronization
 > **The API documentation must ALWAYS be updated no matter how little the created or modified code is.**
-> Any modification or creation of gRPC methods, Protobuf v3 messages, HTTP endpoints, query parameters, payload schemas, or error responses MUST be immediately accompanied by updates to `api/proto/v1/` and `api/openapi/openapi.yaml`. Zero documentation drift is permitted.
+> Any modification or creation of externally exposed gRPC methods, Protobuf v3 messages, HTTP endpoints, query parameters, payload schemas, or error responses MUST be immediately accompanied by updates to `api/proto/v1/` and `api/openapi/openapi.yaml`. Internal repository and domain port contracts must be documented directly at their Go interfaces. Zero documentation drift is permitted.
 
 ### Invariant 2: Strictly Secured Logging
 > **All emitted logs must adhere to Secured Logging principles.**
@@ -35,7 +34,7 @@ The **rag-chunk-lifecycle-service** is a stateless, high-throughput gRPC and RES
 > - **Sanitize error outputs**: Do not expose raw database schemas, table names, or internal stack traces in client-facing errors or public logs.
 
 ### Invariant 3: Memory & Concurrency Bounds
-> - Bounded worker pools and `sync.Pool` for buffer reuse to guarantee RSS remains $<1.2\text{ GiB}$ under 25k chunks/sec load.
+> - Bounded worker pools with explicit in-flight byte and buffer size limits independent of `sync.Pool` (which serves strictly as an allocation reuse optimization). Total pod RSS must be validated under stress to remain strictly below the $1.2\text{ GiB}$ operating target, with the $1.5\text{ GiB}$ container limit serving only as an outer safety cap.
 > - Zero cgo dependencies in the main gRPC serving path.
 > - Context propagation (`context.Context`) across all I/O calls.
 

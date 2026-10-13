@@ -5,8 +5,9 @@
 - **Zero cgo**: The main ingress and gRPC/REST serving path must remain strictly pure Go (zero cgo) to ensure deterministic memory profiling and portable distroless execution.
 - **Explicit Error Handling**: Always wrap errors with actionable domain context using `fmt.Errorf("operation failed: %w", err)`. Never discard errors with `_`.
 - **Memory & Allocation Efficiency**:
-  - Leverage `sync.Pool` for byte buffers and allocation-heavy chunk processing structures to maintain pod memory stability $<1.2\text{ GiB}$.
+  - Enforce explicit in-flight byte limits and per-buffer size limits independent of `sync.Pool`. Treat `sync.Pool` strictly as an allocation reuse optimization rather than a memory boundary.
   - Avoid unnecessary slice copying or heap escapes in high-velocity ingestion loops ($25{,}000\text{ chunks/sec}$).
+  - Benchmark and stress-test total pod RSS to ensure it remains strictly below the $1.2\text{ GiB}$ operating target, keeping the $1.5\text{ GiB}$ container limit as an outer safety cap.
 - **Concurrency & Goroutines**:
   - Always bound goroutine lifecycles using worker pools or semaphore patterns (`errgroup.Group`).
   - Never spawn unbounded goroutines per request.

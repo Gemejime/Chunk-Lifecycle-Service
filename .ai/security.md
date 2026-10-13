@@ -59,9 +59,9 @@
 ## 3. Tenant Boundary & Data Protection Invariants
 
 1. **Deterministic Cryptographic Hashing**:
-   - Chunk identifiers are computed using standard cryptographic SHA-256:
-     $$\text{ChunkID} = \text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$$
-   - Hashing is one-way, tamper-evident, and isolates tenant namespaces naturally.
+   - Chunk identifiers are computed using standard cryptographic SHA-256 over canonical 8-byte big-endian length-prefixed UTF-8 encoded fields:
+     $$\text{ChunkID} = \text{SHA256}(\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath})$$
+   - Length-prefixing prevents delimiter/field collision attacks, while hashing provides tamper-evident isolation across tenant namespaces.
 2. **Strict Multi-Tenant Scoping**:
    - Every database query in `internal/infrastructure/persistence/postgres/` must filter by `tenant_id`.
    - Every Redis cache key must be partitioned by tenant: `chunk:parent:{tenant_id}:{parent_id}:v{version}`.
@@ -76,7 +76,7 @@
 - **12-Factor App Compliance**: All configuration (database credentials, Redis hosts, Kafka topics) is supplied via environment variables.
 - **Zero Secrets in Git**:
   - `.env*` files, private keys (`*.key`, `*.pem`), and certificates are strictly excluded in `.gitignore`.
-  - Secret scanning (e.g. `gitleaks` or `trufflehog`) is enforced in pre-commit and CI.
+  - Secret scanning (e.g. `gitleaks` or `trufflehog`) is a mandatory security gate, to be enforced on staged changes in pre-commit and independently in CI runs once configured.
 
 ---
 
