@@ -32,7 +32,8 @@ It operates as the foundational data and consistency plane within the multimodal
 
 ### A. Ingestion & Content-Addressable Staging Flow
 1. `rag-document-ai-worker` extracts layouts, tokens, and headings, streaming chunks to `rag-chunk-lifecycle-service` via streaming gRPC / Protobuf v3.
-2. Chunks receive deterministic IDs: $\text{ChunkID} = \text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$.
+2. Chunks receive deterministic IDs computed via canonical 8-byte big-endian length-prefixed UTF-8 encoding:
+   $$\text{ChunkID} = \text{SHA256}(\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath})$$
 3. High-velocity stream writes to an unlogged staging table before executing batch manifest promotion via `COPY`/`unnest()` into PostgreSQL 16.
 
 ### B. Parent-Child Compilation Flow
@@ -81,10 +82,11 @@ When child chunks are mutated, parent containers recompiled, or manual patches r
     "sha256-child-chunk-id-1",
     "sha256-child-chunk-id-2"
   ],
-  "trigger_reason": "PATCH_APPLIED", // Values: PATCH_APPLIED | CDC_RECONCILED | QUARANTINE_OVERRIDDEN
+  "trigger_reason": "PATCH_APPLIED",
   "timestamp_utc": 1776057600
 }
 ```
+Allowed values for `trigger_reason` are `PATCH_APPLIED`, `CDC_RECONCILED`, and `QUARANTINE_OVERRIDDEN`.
 Debezium captures this change via PostgreSQL logical decoding (WAL tailing) and pushes the event to Kafka topic `rag.chunk.revectorization` for downstream consumption by `rag-inference-serving`.
 
 #### B. Staged Bulk Database Ingestion Architecture

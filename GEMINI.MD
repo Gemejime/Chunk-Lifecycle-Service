@@ -8,17 +8,17 @@ Welcome to the **rag-chunk-lifecycle-service** codebase. This repository contain
 
 Before generating plans, designing components, or writing code, you **MUST** read and adhere to the following governance documents:
 
-1. **Agent Persona & Protocol**: [.ai/agents.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/agents.md)
+1. **Agent Persona & Protocol**: [.ai/agents.md](.ai/agents.md)
    - Defines your role as a Principal Backend & Distributed Systems Go Engineer, approved skill usage, prompt-planning workflow (`prompts/`), and delivery gates.
-2. **Context Manifest & Non-Negotiables**: [.ai.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai.md)
+2. **Context Manifest & Non-Negotiables**: [.ai.md](.ai.md)
    - Defines the sequential reading order for all project context and core system invariants.
-3. **Core Specification Manifests in [.ai/](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai)**:
-   - [.ai/project-overview.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/project-overview.md) — Service definition, SLIs/SLOs ($P99 \le 120\text{ms}$ compilation, $\ge 25{,}000\text{ chunks/sec}$ ingestion, $P99 \le 8\text{ms}$ context reads), core flows, and scope boundaries.
-   - [.ai/architecture.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/architecture.md) — Hexagonal boundaries, PostgreSQL 16 + Redis 7.2 storage model, Layer 1–5 backend concepts, and Architectural Decision Records (ADRs 001–004).
-   - [.ai/code-standards.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/code-standards.md) — Go 1.23 idioms, zero-cgo runtime, error handling, testing suites, and API documentation rules.
-   - [.ai/security.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/security.md) — Multi-tenant isolation, threat models, Secured Logging invariants, and distroless container posture.
-   - [.ai/ai-workflow-rules.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/ai-workflow-rules.md) — Spec-driven implementation rules, prompt-approval loops, and pre-commit verification gates.
-   - [.ai/progress-tracker.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/progress-tracker.md) — Current phase status, completed tasks, and upcoming milestones.
+3. **Core Specification Manifests in [.ai/](.ai)**:
+   - [.ai/project-overview.md](.ai/project-overview.md) — Service definition, SLIs/SLOs ($P99 \le 120\text{ms}$ compilation, $\ge 25{,}000\text{ chunks/sec}$ ingestion, $P99 \le 8\text{ms}$ context reads), core flows, and scope boundaries.
+   - [.ai/architecture.md](.ai/architecture.md) — Hexagonal boundaries, PostgreSQL 16 + Redis 7.2 storage model, Layer 1–5 backend concepts, and Architectural Decision Records (ADRs 001–004).
+   - [.ai/code-standards.md](.ai/code-standards.md) — Go 1.23 idioms, zero-cgo runtime, error handling, testing suites, and API documentation rules.
+   - [.ai/security.md](.ai/security.md) — Multi-tenant isolation, threat models, Secured Logging invariants, and distroless container posture.
+   - [.ai/ai-workflow-rules.md](.ai/ai-workflow-rules.md) — Spec-driven implementation rules, prompt-approval loops, and pre-commit verification gates.
+   - [.ai/progress-tracker.md](.ai/progress-tracker.md) — Current phase status, completed tasks, and upcoming milestones.
 
 ---
 
@@ -26,10 +26,10 @@ Before generating plans, designing components, or writing code, you **MUST** rea
 
 ### A. Mandatory Doc API Synchronization
 > **CRITICAL RULE**: The "doc api" must ALWAYS be updated no matter how little the created or modified code is.
-- Any change to gRPC service definitions (`api/proto/v1/chunk_service.proto`, `types.proto`), HTTP handlers, or REST routes **MUST** be mirrored immediately in:
+- Any change to externally exposed gRPC service definitions (`api/proto/v1/chunk_service.proto`, `types.proto`), HTTP handlers, or REST routes **MUST** be mirrored immediately in:
   1. `api/openapi/openapi.yaml` (paths, parameters, request bodies, response models, status codes).
   2. Protobuf schema documentation comments.
-  3. Relevant domain/repository contract docstrings.
+- Internal repository and domain port contracts must be documented directly at their Go interfaces.
 - Code changes without corresponding API documentation updates will be rejected.
 
 ### B. Strictly Secured Logging
@@ -41,7 +41,7 @@ Before generating plans, designing components, or writing code, you **MUST** rea
 - **Sanitized Errors**: Sanitize client-facing error responses; never leak database schemas, connection strings, or internal stack traces.
 
 ### C. Architectural Bounds & Invariants
-- **Deterministic Chunking (ADR-001)**: All chunk IDs derive from $\text{SHA256}(\text{TenantID} + \text{NormalizedContent} + \text{StructuralPath})$.
+- **Deterministic Chunking (ADR-001)**: All chunk IDs derive from $\text{SHA256}$ over 8-byte big-endian length-prefixed UTF-8 fields: $\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath}$.
 - **Pragmatic Invalidation (ADR-002)**: Conflicting upstream CDC modifications to patched sections trigger `SECTION_STALE_QUARANTINE`. No speculative 3-way AST diffing.
 - **Process Separation (ADR-003)**: Ingress gRPC server (`cmd/chunk-server`) and reconciliation worker (`cmd/reconciliation-worker`) remain decoupled.
 - **Decoupled Read Plane (ADR-004)**: Context retrieval queries are satisfied exclusively via Redis 7.2 Cluster ($P99 \le 8\text{ms}$), isolated from write lock contention.
@@ -58,7 +58,7 @@ Before concluding any session or committing code:
 4. Verify `govulncheck ./...`.
 5. Verify **Doc API** updates (`api/openapi/openapi.yaml` and `.proto` files).
 6. Verify **Secured Logging** compliance.
-7. Update [.ai/progress-tracker.md](file:///c:/Users/ANIK/Desktop/Gemejime/Chunk%20Lifecycle%20Service/.ai/progress-tracker.md).
+7. Update [.ai/progress-tracker.md](.ai/progress-tracker.md).
 
 ---
 
