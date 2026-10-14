@@ -117,3 +117,10 @@ func (h *ContentHasher) ComputeParentID(tenantID, documentID, headingPath string
 	digest := hasher.Sum(nil)
 	return hex.EncodeToString(digest)
 }
+
+// ComputeHash calculates the lowercase SHA-256 hex hash of normalized text content.
+func (h *ContentHasher) ComputeHash(rawContent string) string {
+	normalized := h.NormalizeContent(rawContent)
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:])
+}

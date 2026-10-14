@@ -11,9 +11,9 @@ dist/
 *.dylib
 *.test
 *.out
-chunk-server
-reconciliation-worker
-rag-chunk-lifecycle-service
+/chunk-server
+/reconciliation-worker
+/rag-chunk-lifecycle-service
 
 # Go workspace and vendor
 vendor/

@@ -1,12 +1,12 @@
 # Progress Tracker — rag-chunk-lifecycle-service
 
 ## Current Phase
-**Phase 2: Parent-Child Compilation, Patch Overlays & Decoupled Read Plane (Weeks 3–4)**
+**Phase 3 Complete: Section CDC Invalidation, Ingress gRPC Server & Administrative Quarantine API (Weeks 5–6)**
 
 ---
 
 ## Current Goal
-Implement the hierarchical parent-child compilation engine, transactional manual section patch overlays with atomic child chunk re-generation, append-only document version advancement (v1 ... vn), transactional outbox egress, and sub-8ms decoupled Redis 7.2 read plane with cache stampede protection.
+Proceed with Phase 4: Production Hardening, Apache Arrow Flight Integration, Stress Benchmarking (25k chunks/sec), and Kubernetes Deployment Posture.
 
 ---
 
@@ -50,19 +50,40 @@ Implement the hierarchical parent-child compilation engine, transactional manual
   - Implemented `ApplySectionPatchHandler` (`internal/application/command/apply_section_patch.go`) with optimistic concurrency checks (`ErrStaleBaseHash`), child chunk slicing, parent context recompilation, atomic manifest version advance ($v_{n+1}$), and `ChunkRevectorizationRequired` transactional outbox event emission.
   - Implemented `GetParentContainerHandler` (`internal/application/query/get_parent_container.go`) with sub-8ms Redis fast path and `singleflight.Group` stampede protection.
   - Synchronized Doc API contracts (`ApplySectionPatch` RPC, request/response schemas in Protobuf and OpenAPI 3.0.3).
-  - Built comprehensive unit test suites (`context_compiler_test.go`, `parent_cache_test.go`, `get_parent_container_test.go`, `apply_section_patch_test.go`) achieving 100% pass rate (24 unit tests) and verified ContextCompiler performance (0.23ms / op vs 120ms SLO target).
+  - Built comprehensive unit test suites (`context_compiler_test.go`, `parent_cache_test.go`, `get_parent_container_test.go`, `apply_section_patch_test.go`) achieving 100% pass rate (24 unit tests).
+- [x] **Phase 3 Implementation Complete**:
+  - Implemented schema migration `000002_add_quarantine_conflict_fields.up.sql` and `.down.sql` with keyset indexes.
+  - Enhanced `entity.SectionPatch` with upstream conflict fields (`upstreamContent`, `upstreamContentHash`, `conflictDetectedAt`) and state machine methods (`Quarantine`, `Reactivate`, `Supersede`).
+  - Implemented `SectionReconciler` (`internal/domain/reconciliation/section_reconciler.go`) adhering to ADR-002 pragmatic section-level CDC invalidation.
+  - Implemented `PostgresPatchRepository` (`internal/infrastructure/persistence/postgres/patch_repo.go`) with multi-tenant filtering and URL-safe Base64 keyset cursor pagination (`(created_at, patch_id) < ($2, $3)`).
+  - Implemented Prometheus telemetry (`internal/infrastructure/telemetry/metrics.go`) exposing all 5 mandated metrics on a dedicated registry.
+  - Synchronized Doc API (`api/openapi/openapi.yaml`) with `/healthz`, `/readyz`, and `/metrics`.
+  - Implemented application commands & queries:
+    - `ReconcileCDCUpdateHandler` with outbox alert dispatch.
+    - `AcceptUpstreamCDCHandler` and `ReapplyOverrideHandler` for Runbook 1 quarantine resolution.
+    - `IngestChunkBatchHandler` with child chunk token bounds validation [100, 300].
+    - `ListQuarantinedPatchesHandler` with keyset cursor pagination.
+  - Implemented gRPC transport:
+    - Streaming ingress `BatchIngestChunks` with token enforcement and backpressure (`codes.ResourceExhausted`).
+    - Interceptors: `Recovery` (panic safety), `Tenant` (multi-tenant boundary validation), `Logging` (Secured Logging without raw text payload leakage).
+    - Unary RPC handlers for `GetParentContainer`, `ReconcileCDCUpdate`, `ApplySectionPatch`.
+  - Implemented REST HTTP Router and `QuarantineHandler` mounting all OpenAPI routes, health probes, and conflict resolution endpoints.
+  - Implemented decoupled binaries adhering to ADR-003:
+    - `cmd/chunk-server/main.go` running concurrent gRPC (50051) and REST HTTP (8080) servers with graceful shutdown.
+    - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler` and `--task=warm-parent-cache` for Runbook 3 cache drift recovery.
+  - Built comprehensive unit test suites (`reconcile_cdc_update_test.go`, `resolve_quarantine_test.go`, `grpc_chunk_handler_test.go`, `http_quarantine_handler_test.go`, `patch_repo_test.go`, `section_reconciler_test.go`) achieving 100% pass rate across 38 tests.
 
 ---
 
 ## In Progress
-- [ ] Phase 3: Ingress gRPC Server, Section CDC Reconciliation & Workers.
+- [ ] Phase 4: Apache Arrow Flight, Stress Testing (25k chunks/sec), Containerization & CI/CD.
 
 ---
 
 ## Next Up
-1. Implement gRPC server transport (`internal/transport/grpc/chunk_service_server.go`).
-2. Implement REST HTTP transport (`internal/transport/http/`).
-3. Implement CDC reconciliation engine (`cmd/reconciliation-worker/`).
+1. Implement Apache Arrow Flight columnar receiver adapter (`internal/infrastructure/flight/`).
+2. Implement 25,000 chunks/sec performance stress benchmark suite (`test/performance/`).
+3. Create distroless multi-stage Docker container (`deployments/docker/Dockerfile`) and Kubernetes Helm charts (`deployments/helm/`).
 
 ---
 

@@ -92,6 +92,10 @@ func (h *GetParentContainerHandler) Execute(
 			slog.Bool("cache_hit", false),
 		)
 
+		if h.repo == nil {
+			return nil, nil
+		}
+
 		container, rErr := h.repo.GetByID(ctx, tenantID, parentID, q.ManifestVersion)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed retrieving parent container from repository: %w", rErr)
