@@ -48,6 +48,16 @@ Before generating plans, designing components, or writing code, you **MUST** rea
 - **Decoupled Read Plane (ADR-004)**: Context retrieval queries are satisfied exclusively via Redis 7.2 Cluster ($P99 \le 8\text{ms}$), isolated from write lock contention.
 - **Resource Constraints**: Maintain pod RSS strictly below $1.2\text{ GiB}$ ($1.5\text{ GiB}$ limit) with zero cgo on the primary gRPC path.
 
+### D. GitOps ArgoCD Deployment Standards
+- **Declarative Helm Architecture**: Package all Kubernetes resources into `deployments/helm/` supporting decoupled deployments for `cmd/chunk-server` and `cmd/reconciliation-worker` with PodDisruptionBudget (`minAvailable: 2`) and HPA (target 65% CPU).
+- **GitOps Continuous Delivery with ArgoCD**: Deploy manifests via `deployments/argocd/` with automated drift detection (`selfHeal: true`, `prune: true`) across `dev`, `staging`, and `production`.
+- **Progressive Delivery & Canary Strategy**: Employ Argo Rollouts with automated metric analysis against Prometheus SLIs (P99 compilation latency $\le 120\text{ms}$, quarantine rate $<2\%$) before stepping traffic from 10% $\to$ 25% $\to$ 100%.
+- **Zero-Trust Distroless Runtime**: Package binaries via multi-stage Docker builds targeting `gcr.io/distroless/static:nonroot` with non-root UID 65532, zero shell environment, and read-only root filesystems.
+
+### E. Human-in-the-Loop (HITL) Governance & Quarantine Protocol
+- **Quarantine Incident Isolation**: Upstream CDC modifications triggering `SECTION_STALE_QUARANTINE` must never crash the service or corrupt parent context graphs. They must be routed to `/v1/conflicts/quarantine` for operator review via `AcceptUpstream` or `ReapplyOverride`.
+- **Deterministic Alerting Thresholds**: Emit alerts if `chunk_section_stale_quarantine_total` increases by $>2\%$ of active CDC runs over 10 minutes or pod memory exceeds 80% of $1.5\text{ GiB}$ for $>2\text{ minutes}$.
+
 ---
 
 ## 3. Pre-Commit Verification Workflow

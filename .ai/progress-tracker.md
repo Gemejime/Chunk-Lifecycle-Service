@@ -72,6 +72,7 @@ Proceed with Phase 4: Production Hardening, Apache Arrow Flight Integration, Str
     - `cmd/chunk-server/main.go` running concurrent gRPC (50051) and REST HTTP (8080) servers with graceful shutdown.
     - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler` and `--task=warm-parent-cache` for Runbook 3 cache drift recovery.
   - Built comprehensive unit test suites (`reconcile_cdc_update_test.go`, `resolve_quarantine_test.go`, `grpc_chunk_handler_test.go`, `http_quarantine_handler_test.go`, `patch_repo_test.go`, `section_reconciler_test.go`) achieving 100% pass rate across 38 tests.
+- [x] Pressure-tested and finalized [prompts/phase-4-load-testing-and-gitops-argocd.md](prompts/phase-4-load-testing-and-gitops-argocd.md) against `tasks/` architectural specifications with ArgoCD Canary Rollouts, AnalysisTemplate, Pod Anti-Affinity, PrometheusRule CRD, Backpressure verification, and Go 1.26 toolchain alignment.
 
 ---
 
