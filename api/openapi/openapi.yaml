@@ -10,6 +10,65 @@ servers:
     description: Local development environment
 
 paths:
+  /healthz:
+    get:
+      summary: Liveness Probe
+      description: Returns 200 OK when the process is live and responsive.
+      operationId: CheckLiveness
+      responses:
+        '200':
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /readyz:
+    get:
+      summary: Readiness Probe
+      description: Verifies downstream dependencies (PostgreSQL pool and Redis cluster connectivity).
+      operationId: CheckReadiness
+      responses:
+        '200':
+          description: Service dependencies are healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+                  postgres:
+                    type: string
+                    example: "connected"
+                  redis:
+                    type: string
+                    example: "connected"
+        '503':
+          description: Service dependencies unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus Telemetry Exposition
+      description: Exposes Prometheus metrics in standard text format.
+      operationId: GetMetrics
+      responses:
+        '200':
+          description: Prometheus metrics formatted payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /v1/tenants/{tenant_id}/documents/{document_id}/chunks:batch:
     post:
       summary: Batch Ingest Chunks
