@@ -76,16 +76,30 @@ func TestParentContainer_TokenBounds(t *testing.T) {
 	content := "Compiled parent context text"
 	children := []string{"chunk1", "chunk2"}
 
-	// Test below lower bound: 799 tokens should fail
-	_, err := entity.NewParentContainer(parentID, tenantID, documentID, 1, heading, content, 799, children)
+	// Test below lower bound floor: <= 0 tokens should fail
+	_, err := entity.NewParentContainer(parentID, tenantID, documentID, 1, heading, content, 0, children)
 	if !errors.Is(err, entity.ErrTokenBudgetViolation) {
-		t.Fatalf("Expected ErrTokenBudgetViolation for 799 tokens, got %v", err)
+		t.Fatalf("Expected ErrTokenBudgetViolation for 0 tokens, got %v", err)
 	}
 
-	// Test above upper bound: 1501 tokens should fail
+	_, err = entity.NewParentContainer(parentID, tenantID, documentID, 1, heading, content, -10, children)
+	if !errors.Is(err, entity.ErrTokenBudgetViolation) {
+		t.Fatalf("Expected ErrTokenBudgetViolation for -10 tokens, got %v", err)
+	}
+
+	// Test above upper bound ceiling: 1501 tokens should fail
 	_, err = entity.NewParentContainer(parentID, tenantID, documentID, 1, heading, content, 1501, children)
 	if !errors.Is(err, entity.ErrTokenBudgetViolation) {
 		t.Fatalf("Expected ErrTokenBudgetViolation for 1501 tokens, got %v", err)
+	}
+
+	// Test valid tail window (remainder < 800 tokens at boundary): 350 and 799 tokens should succeed
+	containerTail, err := entity.NewParentContainer(parentID, tenantID, documentID, 1, heading, content, 350, children)
+	if err != nil {
+		t.Fatalf("Expected 350 tokens (tail window) to succeed, got %v", err)
+	}
+	if containerTail.TokenCount() != 350 {
+		t.Fatalf("Expected TokenCount() == 350, got %d", containerTail.TokenCount())
 	}
 
 	// Test valid boundaries: 800 and 1500 tokens should succeed

@@ -1,12 +1,12 @@
 # Progress Tracker — rag-chunk-lifecycle-service
 
 ## Current Phase
-**Phase 1: Content Addressing & Data Plane Foundations (Weeks 1–2)**
+**Phase 2: Parent-Child Compilation, Patch Overlays & Decoupled Read Plane (Weeks 3–4)**
 
 ---
 
 ## Current Goal
-Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hashing engine, batch unnest/COPY staging adapter, Protobuf v3 definitions, and OpenAPI specs.
+Implement the hierarchical parent-child compilation engine, transactional manual section patch overlays with atomic child chunk re-generation, append-only document version advancement (v1 ... vn), transactional outbox egress, and sub-8ms decoupled Redis 7.2 read plane with cache stampede protection.
 
 ---
 
@@ -40,18 +40,29 @@ Establish Go module structure, PostgreSQL schema DDL, deterministic SHA-256 hash
   - High-velocity staging adapter (`batch_writer.go`) leveraging transactional `COPY` and atomic promotion.
   - PostgreSQL Manifest repository (`manifest_repo.go`) and Outbox repository (`outbox_repo.go`).
 - [x] Built comprehensive unit test suites (`test/unit/content_hasher_test.go` and `test/unit/domain_entity_test.go`) validating 100% test pass rate.
+- [x] **Phase 2 Implementation Complete**:
+  - Added production dependencies: `github.com/redis/go-redis/v9`, `golang.org/x/sync`, and `github.com/alicebob/miniredis/v2`.
+  - Hardened `ParentContainer` entity token validation (resolving small tail remainder windows < 800 tokens at section boundary/EOF while preserving 1,500 token upper ceiling).
+  - Implemented `ContextCompiler` (`internal/domain/compiler/context_compiler.go`) grouping 100–300 token child chunks into 800–1,500 token parent containers with section boundary splitting and deterministic ADR-001 Parent ID hashing.
+  - Defined `ParentRepository` and `ParentCache` domain port contracts.
+  - Implemented PostgreSQL 16 `PostgresParentRepository` adapter (`internal/infrastructure/persistence/postgres/parent_repo.go`).
+  - Implemented Redis 7.2 UniversalClient `RedisParentCache` adapter (`internal/infrastructure/cache/redis/parent_cache.go`) with versioned keys (`chunk:parent:{tenant_id}:{parent_id}:v{version}`).
+  - Implemented `ApplySectionPatchHandler` (`internal/application/command/apply_section_patch.go`) with optimistic concurrency checks (`ErrStaleBaseHash`), child chunk slicing, parent context recompilation, atomic manifest version advance ($v_{n+1}$), and `ChunkRevectorizationRequired` transactional outbox event emission.
+  - Implemented `GetParentContainerHandler` (`internal/application/query/get_parent_container.go`) with sub-8ms Redis fast path and `singleflight.Group` stampede protection.
+  - Synchronized Doc API contracts (`ApplySectionPatch` RPC, request/response schemas in Protobuf and OpenAPI 3.0.3).
+  - Built comprehensive unit test suites (`context_compiler_test.go`, `parent_cache_test.go`, `get_parent_container_test.go`, `apply_section_patch_test.go`) achieving 100% pass rate (24 unit tests) and verified ContextCompiler performance (0.23ms / op vs 120ms SLO target).
 
 ---
 
 ## In Progress
-- [ ] Phase 1 review and preparation for Phase 2 (Compiler & Redis Read Plane).
+- [ ] Phase 3: Ingress gRPC Server, Section CDC Reconciliation & Workers.
 
 ---
 
 ## Next Up
-1. Implement Phase 2 parent-child context compilation engine (`internal/domain/compiler/parent_child_compiler.go`).
-2. Integrate Redis 7.2 cluster cache adapter (`internal/infrastructure/cache/redis/`) for sub-8ms P99 retrieval.
-3. Construct gRPC and REST transport handlers (`internal/transport/grpc/`, `internal/transport/http/`).
+1. Implement gRPC server transport (`internal/transport/grpc/chunk_service_server.go`).
+2. Implement REST HTTP transport (`internal/transport/http/`).
+3. Implement CDC reconciliation engine (`cmd/reconciliation-worker/`).
 
 ---
 
