@@ -136,3 +136,36 @@ message OutboxEvent {
   // timestamp_utc is the UTC creation timestamp.
   google.protobuf.Timestamp timestamp_utc = 8;
 }
+
+// ApplySectionPatchRequest specifies operator override payload anchored to a section key.
+message ApplySectionPatchRequest {
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 1;
+  // document_id identifies the document aggregate root.
+  string document_id = 2;
+  // section_key denotes the structural section identifier (e.g., "doc_uuid/sec_4").
+  string section_key = 3;
+  // base_content_hash is the expected SHA-256 hash of the content before patch application (optimistic concurrency control).
+  string base_content_hash = 4;
+  // patched_content is the operator replacement text body.
+  string patched_content = 5;
+  // operator_id identifies the operator authoring the override.
+  string operator_id = 6;
+  // client_mutation_id is an idempotency token ensuring atomic single application.
+  string client_mutation_id = 7;
+}
+
+// ApplySectionPatchResponse returns the compilation and outbox emission outcome of a patch overlay.
+message ApplySectionPatchResponse {
+  // patch_id is the unique UUID string of the applied patch.
+  string patch_id = 1;
+  // manifest_version is the newly minted monotonic manifest version (v_n+1).
+  int64 manifest_version = 2;
+  // status is the lifecycle state of the patch (e.g., "ACTIVE").
+  PatchStatus status = 3;
+  // recompiled_parent_ids lists the IDs of parent containers recompiled under the new version.
+  repeated string recompiled_parent_ids = 4;
+  // revectorization_chunk_ids lists the newly generated child chunk IDs requiring downstream embedding.
+  repeated string revectorization_chunk_ids = 5;
+}
+

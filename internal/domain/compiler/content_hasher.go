@@ -80,3 +80,40 @@ func (h *ContentHasher) ComputeChunkIDWithNormalized(tenantID, normalizedContent
 	digest := hasher.Sum(nil)
 	return hex.EncodeToString(digest)
 }
+
+// ComputeParentID calculates the deterministic content-addressed Parent ID according to ADR-001:
+// ParentID = SHA256(len_8BE(TenantID) || TenantID || len_8BE(DocumentID) || DocumentID || len_8BE(HeadingPath) || HeadingPath || len_8BE(CanonicalChildIDs) || CanonicalChildIDs)
+// Returns a lowercase 64-character hexadecimal string.
+func (h *ContentHasher) ComputeParentID(tenantID, documentID, headingPath string, childChunkIDs []string) string {
+	canonicalChildren := strings.Join(childChunkIDs, ",")
+	tBytes := []byte(tenantID)
+	dBytes := []byte(documentID)
+	hBytes := []byte(headingPath)
+	cBytes := []byte(canonicalChildren)
+
+	hasher := sha256.New()
+	var lenBuf [8]byte
+
+	// 1. len_8BE(TenantID) || TenantID
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(tBytes)))
+	hasher.Write(lenBuf[:])
+	hasher.Write(tBytes)
+
+	// 2. len_8BE(DocumentID) || DocumentID
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(dBytes)))
+	hasher.Write(lenBuf[:])
+	hasher.Write(dBytes)
+
+	// 3. len_8BE(HeadingPath) || HeadingPath
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(hBytes)))
+	hasher.Write(lenBuf[:])
+	hasher.Write(hBytes)
+
+	// 4. len_8BE(CanonicalChildIDs) || CanonicalChildIDs
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(cBytes)))
+	hasher.Write(lenBuf[:])
+	hasher.Write(cBytes)
+
+	digest := hasher.Sum(nil)
+	return hex.EncodeToString(digest)
+}

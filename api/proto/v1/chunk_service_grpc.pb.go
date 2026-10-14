@@ -23,6 +23,7 @@ const (
 	ChunkLifecycleService_BatchIngestChunks_FullMethodName  = "/chunk.v1.ChunkLifecycleService/BatchIngestChunks"
 	ChunkLifecycleService_GetParentContainer_FullMethodName = "/chunk.v1.ChunkLifecycleService/GetParentContainer"
 	ChunkLifecycleService_ReconcileCDCUpdate_FullMethodName = "/chunk.v1.ChunkLifecycleService/ReconcileCDCUpdate"
+	ChunkLifecycleService_ApplySectionPatch_FullMethodName  = "/chunk.v1.ChunkLifecycleService/ApplySectionPatch"
 )
 
 // ChunkLifecycleServiceClient is the client API for ChunkLifecycleService service.
@@ -51,6 +52,8 @@ type ChunkLifecycleServiceClient interface {
 	// If an active operator patch exists for the section and its base hash does not match,
 	// the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
 	ReconcileCDCUpdate(ctx context.Context, in *ReconcileCDCRequest, opts ...grpc.CallOption) (*ReconcileCDCResponse, error)
+	// ApplySectionPatch applies an operator override to an identified section key.
+	ApplySectionPatch(ctx context.Context, in *ApplySectionPatchRequest, opts ...grpc.CallOption) (*ApplySectionPatchResponse, error)
 }
 
 type chunkLifecycleServiceClient struct {
@@ -94,6 +97,16 @@ func (c *chunkLifecycleServiceClient) ReconcileCDCUpdate(ctx context.Context, in
 	return out, nil
 }
 
+func (c *chunkLifecycleServiceClient) ApplySectionPatch(ctx context.Context, in *ApplySectionPatchRequest, opts ...grpc.CallOption) (*ApplySectionPatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplySectionPatchResponse)
+	err := c.cc.Invoke(ctx, ChunkLifecycleService_ApplySectionPatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChunkLifecycleServiceServer is the server API for ChunkLifecycleService service.
 // All implementations must embed UnimplementedChunkLifecycleServiceServer
 // for forward compatibility.
@@ -120,6 +133,8 @@ type ChunkLifecycleServiceServer interface {
 	// If an active operator patch exists for the section and its base hash does not match,
 	// the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
 	ReconcileCDCUpdate(context.Context, *ReconcileCDCRequest) (*ReconcileCDCResponse, error)
+	// ApplySectionPatch applies an operator override to an identified section key.
+	ApplySectionPatch(context.Context, *ApplySectionPatchRequest) (*ApplySectionPatchResponse, error)
 	mustEmbedUnimplementedChunkLifecycleServiceServer()
 }
 
@@ -138,6 +153,9 @@ func (UnimplementedChunkLifecycleServiceServer) GetParentContainer(context.Conte
 }
 func (UnimplementedChunkLifecycleServiceServer) ReconcileCDCUpdate(context.Context, *ReconcileCDCRequest) (*ReconcileCDCResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReconcileCDCUpdate not implemented")
+}
+func (UnimplementedChunkLifecycleServiceServer) ApplySectionPatch(context.Context, *ApplySectionPatchRequest) (*ApplySectionPatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplySectionPatch not implemented")
 }
 func (UnimplementedChunkLifecycleServiceServer) mustEmbedUnimplementedChunkLifecycleServiceServer() {}
 func (UnimplementedChunkLifecycleServiceServer) testEmbeddedByValue()                               {}
@@ -203,6 +221,24 @@ func _ChunkLifecycleService_ReconcileCDCUpdate_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChunkLifecycleService_ApplySectionPatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplySectionPatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkLifecycleServiceServer).ApplySectionPatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChunkLifecycleService_ApplySectionPatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkLifecycleServiceServer).ApplySectionPatch(ctx, req.(*ApplySectionPatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChunkLifecycleService_ServiceDesc is the grpc.ServiceDesc for ChunkLifecycleService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -217,6 +253,10 @@ var ChunkLifecycleService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReconcileCDCUpdate",
 			Handler:    _ChunkLifecycleService_ReconcileCDCUpdate_Handler,
+		},
+		{
+			MethodName: "ApplySectionPatch",
+			Handler:    _ChunkLifecycleService_ApplySectionPatch_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -7,6 +7,7 @@
 package chunkv1
 
 import (
+	fmt "fmt"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -692,6 +693,136 @@ func (x *OutboxEvent) GetTriggerReason() TriggerReason {
 func (x *OutboxEvent) GetTimestampUtc() *timestamppb.Timestamp {
 	if x != nil {
 		return x.TimestampUtc
+	}
+	return nil
+}
+
+// ApplySectionPatchRequest specifies operator override payload anchored to a section key.
+type ApplySectionPatchRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TenantId         string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	DocumentId       string                 `protobuf:"bytes,2,opt,name=document_id,json=documentId,proto3" json:"document_id,omitempty"`
+	SectionKey       string                 `protobuf:"bytes,3,opt,name=section_key,json=sectionKey,proto3" json:"section_key,omitempty"`
+	BaseContentHash  string                 `protobuf:"bytes,4,opt,name=base_content_hash,json=baseContentHash,proto3" json:"base_content_hash,omitempty"`
+	PatchedContent   string                 `protobuf:"bytes,5,opt,name=patched_content,json=patchedContent,proto3" json:"patched_content,omitempty"`
+	OperatorId       string                 `protobuf:"bytes,6,opt,name=operator_id,json=operatorId,proto3" json:"operator_id,omitempty"`
+	ClientMutationId string                 `protobuf:"bytes,7,opt,name=client_mutation_id,json=clientMutationId,proto3" json:"client_mutation_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ApplySectionPatchRequest) Reset() {
+	*x = ApplySectionPatchRequest{}
+}
+
+func (x *ApplySectionPatchRequest) String() string {
+	return fmt.Sprintf("ApplySectionPatchRequest{tenant_id: %s, document_id: %s, section_key: %s}", x.TenantId, x.DocumentId, x.SectionKey)
+}
+
+func (*ApplySectionPatchRequest) ProtoMessage() {}
+
+func (x *ApplySectionPatchRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetDocumentId() string {
+	if x != nil {
+		return x.DocumentId
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetSectionKey() string {
+	if x != nil {
+		return x.SectionKey
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetBaseContentHash() string {
+	if x != nil {
+		return x.BaseContentHash
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetPatchedContent() string {
+	if x != nil {
+		return x.PatchedContent
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetOperatorId() string {
+	if x != nil {
+		return x.OperatorId
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchRequest) GetClientMutationId() string {
+	if x != nil {
+		return x.ClientMutationId
+	}
+	return ""
+}
+
+// ApplySectionPatchResponse returns the compilation and outbox emission outcome of a patch overlay.
+type ApplySectionPatchResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	PatchId                 string                 `protobuf:"bytes,1,opt,name=patch_id,json=patchId,proto3" json:"patch_id,omitempty"`
+	ManifestVersion         int64                  `protobuf:"varint,2,opt,name=manifest_version,json=manifestVersion,proto3" json:"manifest_version,omitempty"`
+	Status                  PatchStatus            `protobuf:"varint,3,opt,name=status,proto3,enum=chunk.v1.PatchStatus" json:"status,omitempty"`
+	RecompiledParentIds     []string               `protobuf:"bytes,4,rep,name=recompiled_parent_ids,json=recompiledParentIds,proto3" json:"recompiled_parent_ids,omitempty"`
+	RevectorizationChunkIds []string               `protobuf:"bytes,5,rep,name=revectorization_chunk_ids,json=revectorizationChunkIds,proto3" json:"revectorization_chunk_ids,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ApplySectionPatchResponse) Reset() {
+	*x = ApplySectionPatchResponse{}
+}
+
+func (x *ApplySectionPatchResponse) String() string {
+	return fmt.Sprintf("ApplySectionPatchResponse{patch_id: %s, manifest_version: %d, status: %v}", x.PatchId, x.ManifestVersion, x.Status)
+}
+
+func (*ApplySectionPatchResponse) ProtoMessage() {}
+
+func (x *ApplySectionPatchResponse) GetPatchId() string {
+	if x != nil {
+		return x.PatchId
+	}
+	return ""
+}
+
+func (x *ApplySectionPatchResponse) GetManifestVersion() int64 {
+	if x != nil {
+		return x.ManifestVersion
+	}
+	return 0
+}
+
+func (x *ApplySectionPatchResponse) GetStatus() PatchStatus {
+	if x != nil {
+		return x.Status
+	}
+	return PatchStatus_PATCH_STATUS_UNSPECIFIED
+}
+
+func (x *ApplySectionPatchResponse) GetRecompiledParentIds() []string {
+	if x != nil {
+		return x.RecompiledParentIds
+	}
+	return nil
+}
+
+func (x *ApplySectionPatchResponse) GetRevectorizationChunkIds() []string {
+	if x != nil {
+		return x.RevectorizationChunkIds
 	}
 	return nil
 }

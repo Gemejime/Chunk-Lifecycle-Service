@@ -27,7 +27,7 @@ type ParentContainer struct {
 // Invariants enforced:
 // - Non-empty parentID, tenantID, and documentID.
 // - Monotonic positive manifest version (> 0).
-// - Token budget strictly bounded between 800 and 1,500 tokens.
+// - Token budget: positive (> 0) and bounded by MaxParentTokenBudget (1,500), supporting tail windows at section boundaries or EOF.
 func NewParentContainer(
 	parentID string,
 	tenantID string,
@@ -57,9 +57,9 @@ func NewParentContainer(
 		return nil, fmt.Errorf("%w: version %d must be positive", ErrVersionRegression, manifestVersion)
 	}
 
-	if tokenCount < MinParentTokenBudget || tokenCount > MaxParentTokenBudget {
-		return nil, fmt.Errorf("%w: parent container token count %d outside [%d, %d]",
-			ErrTokenBudgetViolation, tokenCount, MinParentTokenBudget, MaxParentTokenBudget)
+	if tokenCount <= 0 || tokenCount > MaxParentTokenBudget {
+		return nil, fmt.Errorf("%w: parent container token count %d outside (0, %d]",
+			ErrTokenBudgetViolation, tokenCount, MaxParentTokenBudget)
 	}
 
 	childrenCopy := make([]string, len(childChunkIDs))

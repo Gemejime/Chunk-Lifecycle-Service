@@ -76,6 +76,123 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /v1/tenants/{tenant_id}/documents/{document_id}/patches:
+    post:
+      summary: Apply Section Patch Overlay
+      description: >
+        Applies a manual operator patch anchored to a section key. Enforces optimistic concurrency
+        via base_content_hash, slices new child chunks, recompiles parent context windows,
+        atomically mints a new monotonic document manifest version, and emits an outbox event.
+      operationId: ApplySectionPatch
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+            example: "tenant-corp-1"
+        - name: document_id
+          in: path
+          required: true
+          description: Unique identifier of the document aggregate root.
+          schema:
+            type: string
+            example: "doc-manual-998"
+        - name: X-Trace-ID
+          in: header
+          required: false
+          description: Distributed tracing trace identifier for request correlation.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplySectionPatchRequest'
+      responses:
+        '201':
+          description: Patch successfully applied and parent contexts compiled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplySectionPatchResponse'
+        '400':
+          description: Invalid patch payload or empty section key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Document aggregate root not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Optimistic concurrency violation (stale base content hash).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenants/{tenant_id}/parents/{parent_id}:
+    get:
+      summary: Get Parent Context Container
+      description: >
+        Retrieves a compiled parent context container adhering to the sub-8ms P99 latency target.
+        Queries the decoupled Redis 7.2 read plane first, with singleflight stampede protection fallback.
+      operationId: GetParentContainer
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          description: Tenant boundary identifier.
+          schema:
+            type: string
+            example: "tenant-corp-1"
+        - name: parent_id
+          in: path
+          required: true
+          description: Unique identifier of the parent context container.
+          schema:
+            type: string
+            example: "parent-sec-1"
+        - name: manifest_version
+          in: query
+          required: false
+          description: Manifest version to retrieve (defaults to 0 for latest active version).
+          schema:
+            type: integer
+            format: int64
+            default: 0
+      responses:
+        '200':
+          description: Parent container retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentContainerModel'
+        '404':
+          description: Parent container not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Sanitized internal processing error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /v1/conflicts/quarantine:
     get:
       summary: List Quarantined Patches
@@ -382,6 +499,81 @@ components:
         manifest_version:
           type: integer
           format: int64
+
+    ApplySectionPatchRequest:
+      type: object
+      required:
+        - section_key
+        - base_content_hash
+        - patched_content
+        - operator_id
+        - client_mutation_id
+      properties:
+        section_key:
+          type: string
+          description: Hierarchical section key anchor.
+          example: "doc-manual-998/sec_4"
+        base_content_hash:
+          type: string
+          description: Expected SHA-256 hash of existing section content.
+          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        patched_content:
+          type: string
+          description: Operator-supplied replacement text.
+          example: "Updated operating procedures for section 4."
+        operator_id:
+          type: string
+          description: Identity of the operator or agent authoring the patch.
+          example: "usr-ops-412"
+        client_mutation_id:
+          type: string
+          format: uuid
+          description: Idempotency token for this mutation.
+          example: "c79f9872-9720-410a-b6b5-1ea9b0687799"
+
+    ApplySectionPatchResponse:
+      type: object
+      properties:
+        patch_id:
+          type: string
+          format: uuid
+        manifest_version:
+          type: integer
+          format: int64
+        status:
+          type: string
+          example: "ACTIVE"
+        recompiled_parent_ids:
+          type: array
+          items:
+            type: string
+        revectorization_chunk_ids:
+          type: array
+          items:
+            type: string
+
+    ParentContainerModel:
+      type: object
+      properties:
+        parent_id:
+          type: string
+        tenant_id:
+          type: string
+        document_id:
+          type: string
+        manifest_version:
+          type: integer
+          format: int64
+        heading_path:
+          type: string
+        content:
+          type: string
+        token_count:
+          type: integer
+        child_chunk_ids:
+          type: array
+          items:
+            type: string
 
     ErrorResponse:
       type: object

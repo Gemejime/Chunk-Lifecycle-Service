@@ -44,4 +44,7 @@ var (
 
 	// ErrEmptyOperatorID is returned when operator_id is empty or missing.
 	ErrEmptyOperatorID = errors.New("operator_id must not be empty")
+
+	// ErrStaleBaseHash is returned when the operator patch base_content_hash does not match the active section content hash.
+	ErrStaleBaseHash = errors.New("base content hash does not match active section content")
 )
