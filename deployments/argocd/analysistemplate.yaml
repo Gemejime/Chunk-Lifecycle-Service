@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: chunk-server-canary-analysis
+  namespace: rag-chunk-lifecycle
+spec:
+  args:
+    - name: service-name
+    - name: prometheus-url
+      value: "http://prometheus-k8s.monitoring.svc.cluster.local:9090"
+  metrics:
+    # SLO 1: Compilation P99 Latency <= 120ms
+    - name: compilation-p99-latency
+      interval: 30s
+      successCondition: result[0] <= 0.120
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: "{{args.prometheus-url}}"
+          query: |
+            histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket{app_kubernetes_io_name="rag-chunk-lifecycle-service"}[5m])) by (le))
+
+    # SLO 2: Quarantine rate <= 2% of active ingestion stream runs
+    - name: quarantine-budget
+      interval: 60s
+      successCondition: result[0] <= 0.02
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: "{{args.prometheus-url}}"
+          query: |
+            (sum(rate(chunk_section_stale_quarantine_total[10m])) / clamp_min(sum(rate(chunk_ingestion_chunks_per_second[10m])), 1))

@@ -1,0 +1,121 @@
+# Default operational values for rag-chunk-lifecycle-service.
+
+replicaCount: 3
+
+image:
+  repository: ghcr.io/gemejime/rag-chunk-lifecycle-service
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  grpcPort: 50051
+  httpPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chunk-lifecycle.internal
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+resources:
+  chunkServer:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 1.5Gi
+  reconciliationWorker:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rag-chunk-lifecycle-service
+          topologyKey: topology.kubernetes.io/zone
+
+nodeSelector: {}
+tolerations: []
+
+env:
+  httpPort: "8080"
+  grpcPort: "50051"
+  logLevel: "info"
+
+config:
+  databaseUrl: "postgres://postgres:postgres@postgres-cluster.database.svc.cluster.local:5432/chunk_lifecycle?sslmode=disable"
+  redisAddr: "redis-cluster.cache.svc.cluster.local:6379"
+
+secrets:
+  databasePassword: ""
+
+# Canary progressive delivery configuration
+canary:
+  enabled: false
+  analysis:
+    enabled: true
+
+# Prometheus alerting rule configuration
+prometheusRule:
+  enabled: true
+  additionalLabels:
+    role: alert-rules

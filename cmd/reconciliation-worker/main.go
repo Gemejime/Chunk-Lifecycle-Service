@@ -71,6 +71,10 @@ func main() {
 		<-ctx.Done()
 		slog.Info("reconciler worker gracefully stopped")
 
+	case "healthcheck":
+		// Probe healthcheck for Kubernetes exec probe
+		os.Exit(0)
+
 	default:
 		slog.Error("unknown worker task", slog.String("task", *task))
 		os.Exit(1)
