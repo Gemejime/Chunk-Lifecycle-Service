@@ -1,11 +1,12 @@
 # Implementation Prompt: Phase 4 — Load Testing, Decoupled Read Path, GitOps ArgoCD & Production Hardening
 
-## 1. Objective & Scope
+### 1. Objective & Scope
 
 Implement Phase 4 of `rag-chunk-lifecycle-service` strictly adhering to:
-- [`tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`](../tasks/RAG%20Chunk%20Lifecycle%20Service%20Implementation%20Plan.pdf) (Milestone: Phase 4 Load Testing & Decoupled Read Path, Weeks 7–8; Sections 4, 5, 6, 8, 9)
-- [`tasks/Production-Grade Multimodal RAG Architectural Specification.pdf`](../tasks/Production-Grade%20Multimodal%20RAG%20Architectural%20Specification.pdf)
-- [`tasks/Go and Python Microservices Architecture.pdf`](../tasks/Go%20and%20Python%20Microservices%20Architecture.pdf)
+
+- [`tasks/RAG Chunk Lifecycle Service Implementation Plan.pdf`](<../tasks/RAG%20Chunk%20Lifecycle%20Service%20Implementation%20Plan.pdf>) (Milestone: Phase 4 Load Testing & Decoupled Read Path, Weeks 7–8; Sections 4, 5, 6, 8, 9)
+- [`tasks/Production-Grade Multimodal RAG Architectural Specification.pdf`](<../tasks/Production-Grade%20Multimodal%20RAG%20Architectural%20Specification.pdf>)
+- [`tasks/Go and Python Microservices Architecture.pdf`](<../tasks/Go%20and%20Python%20Microservices%20Architecture.pdf>)
 - [`GEMINI.MD`](../GEMINI.MD) & [`.ai/architecture.md`](../.ai/architecture.md)
 - [`.ai/ai-workflow-rules.md`](../.ai/ai-workflow-rules.md)
 - [`.ai/progress-tracker.md`](../.ai/progress-tracker.md)
@@ -17,6 +18,7 @@ This phase establishes production-grade deployment posture, declarative GitOps c
 ## 2. Core Deliverables for Phase 4
 
 ### A. Zero-Trust Distroless Containerization (`deployments/docker/Dockerfile` & `.dockerignore`)
+
 1. Multi-stage Docker build:
    - **Build Stage**: `golang:1.26-alpine` (aligned with `go.mod`) with `CGO_ENABLED=0`, `GOOS=linux`, `GOARCH=amd64`. Compiles stripped, statically linked binaries for both `cmd/chunk-server` and `cmd/reconciliation-worker` using `-ldflags="-s -w -extldflags '-static'"`.
    - **Runtime Stage**: `gcr.io/distroless/static:nonroot` (UID `65532:65532`).
@@ -25,7 +27,9 @@ This phase establishes production-grade deployment posture, declarative GitOps c
 2. Repository root `.dockerignore` excluding `.git`, `tasks/`, `test/`, `prompts/`, `.ai/`, and local binaries.
 
 ### B. Production Helm Chart Architecture (`deployments/helm/`)
+
 Package `rag-chunk-lifecycle-service` into a modular, production-ready Helm chart:
+
 1. `Chart.yaml`: Helm chart metadata (`name: rag-chunk-lifecycle-service`, `version: 0.1.0`, `appVersion: "1.0.0"`).
 2. `values.yaml`: Default operational parameters:
    - Image repository, tag, pullPolicy.
@@ -54,6 +58,7 @@ Package `rag-chunk-lifecycle-service` into a modular, production-ready Helm char
     - **High Memory Pressure**: fires if pod memory usage exceeds $80\%$ of the $1.5\text{ GiB}$ limit for $>2\text{m}$.
 
 ### C. Declarative GitOps ArgoCD & Canary Delivery (`deployments/argocd/`)
+
 1. `application-chunk-server.yaml`: Declarative ArgoCD Application with automated synchronization (`selfHeal: true`, `prune: true`, `CreateNamespace=true`).
 2. `application-reconciliation-worker.yaml`: ArgoCD Application managing background reconciliation worker.
 3. `applicationset.yaml`: Multi-cluster / multi-environment ApplicationSet generating configurations across `dev`, `staging`, and `production`.
@@ -66,6 +71,7 @@ Package `rag-chunk-lifecycle-service` into a modular, production-ready Helm char
    - Automated rollback triggered if metric analysis fails error or latency budgets.
 
 ### D. Pure-Go Apache Arrow Flight Columnar Receiver Adapter (`internal/infrastructure/flight/flight_receiver.go`)
+
 1. Adheres to Section 1 & Section 8 of the implementation plan and zero-cgo runtime invariant:
    - Pure-Go implementation (`CGO_ENABLED=0` compatible) reserving Arrow Flight for high-throughput columnar tabular / tensor batch payloads.
    - Decodes Arrow `RecordBatch` streams with columnar schema (`tenant_id`, `document_id`, `normalized_content`, `structural_path`, `token_count`, `sequence_index`).
@@ -73,7 +79,9 @@ Package `rag-chunk-lifecycle-service` into a modular, production-ready Helm char
    - Exposes Flight handler on gRPC multiplexed or dedicated port (50051/50052), documented in `api/openapi/openapi.yaml` and `.ai/doc-api.md`.
 
 ### E. Performance, Scale & Stress Testing Suite (`test/performance/load_test.go`)
+
 Isolated with build tag `//go:build performance`:
+
 1. **25,000 Chunks/Sec Ingestion Benchmark**:
    - Synthesizes high-velocity chunk streams simulating real-time document worker output.
    - Verifies batch staging and promotion throughput without database pool starvation.
@@ -88,6 +96,7 @@ Isolated with build tag `//go:build performance`:
    - Asserts pod RSS stays strictly below $1.2\text{ GiB}$ ($1.5\text{ GiB}$ hard limit) with zero allocator leaks under GC cycles.
 
 ### F. CI Pipeline & Tooling Enhancement (`.github/workflows/ci.yml` & `Makefile`)
+
 1. Adds Helm chart linting (`helm lint deployments/helm`).
 2. Adds Kubernetes manifest template validation (`helm template test deployments/helm`).
 3. Adds multi-stage container compilation validation with `CGO_ENABLED=0`.

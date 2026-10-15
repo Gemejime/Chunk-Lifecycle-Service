@@ -197,7 +197,18 @@ paths:
 
 ---
 
-## 6. Pre-Commit Doc API Checklist
+## 6. Apache Arrow Flight Columnar Ingress Standards
+
+In addition to standard Protobuf v3 streaming over gRPC, `rag-chunk-lifecycle-service` exposes an Apache Arrow Flight receiver (`internal/infrastructure/flight/flight_receiver.go`) reserving Flight strictly for high-throughput columnar tabular and tensor ingestion (Section 1 & 8 of architectural plan):
+- **Schema**: Columnar arrays of `tenant_id`, `document_id`, `normalized_content`, `structural_path`, `token_count`, and `sequence_index`.
+- **Runtime**: Pure-Go implementation compatible with `CGO_ENABLED=0`.
+- **Validation**: Enforces child token count bounds [100, 300] and computes deterministic SHA-256 chunk IDs adhering to ADR-001.
+- **Backpressure**: Enforces bounded in-flight streams, rejecting saturation with `ErrBackpressureSaturated`.
+- **OpenAPI Schema**: Declared in `api/openapi/openapi.yaml` under `ColumnarRecordBatchModel` and `FlightIngestResultModel`.
+
+---
+
+## 7. Pre-Commit Doc API Checklist
 
 Before committing any changeset:
 - [ ] Has any gRPC RPC or Protobuf message been created or modified? If yes, are doc comments and `api/proto/v1/` updated?

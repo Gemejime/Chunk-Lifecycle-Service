@@ -650,3 +650,65 @@ components:
         trace_id:
           type: string
           example: "trc-8973b-e10"
+
+    ColumnarRecordBatchModel:
+      type: object
+      description: >
+        Pure-Go Apache Arrow Flight columnar batch schema for high-throughput
+        tabular, multimodal, and tensor batch ingestion.
+      required:
+        - tenant_ids
+        - document_ids
+        - normalized_content
+        - structural_paths
+        - token_counts
+        - sequence_indices
+      properties:
+        tenant_ids:
+          type: array
+          items:
+            type: string
+          description: Tenant isolation identifiers per row.
+        document_ids:
+          type: array
+          items:
+            type: string
+          description: Parent document identifiers per row.
+        normalized_content:
+          type: array
+          items:
+            type: string
+          description: Normalized text payload per child chunk.
+        structural_paths:
+          type: array
+          items:
+            type: string
+          description: Structural JSON/DOM/Markdown paths (e.g., "doc/sec_1/p_2").
+        token_counts:
+          type: array
+          items:
+            type: integer
+          description: Token budget count strictly bounded between 100 and 300.
+        sequence_indices:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: Monotonic sequence index within document stream.
+
+    FlightIngestResultModel:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        chunks_processed:
+          type: integer
+        chunks_deduplicated:
+          type: integer
+        manifest_version:
+          type: integer
+          format: int64
+        success:
+          type: boolean
+

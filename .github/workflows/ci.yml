@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: true
 
       - name: Set up Buf
@@ -74,13 +74,52 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           cache: true
 
       - name: Run Unit Tests
         run: go test -v -race ./test/unit/...
 
+      - name: Run Performance Benchmarks
+        run: go test -v -tags=performance ./test/performance/...
+
       - name: Run Vulnerability Check
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+  helm-and-k8s:
+    name: Helm & Kubernetes Manifest Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint Helm Chart
+        run: helm lint deployments/helm
+
+      - name: Template Validate Helm Chart
+        run: helm template test deployments/helm
+
+  docker-build:
+    name: Zero-Trust Distroless Container Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployments/docker/Dockerfile
+          push: false
+          tags: rag-chunk-lifecycle-service:latest

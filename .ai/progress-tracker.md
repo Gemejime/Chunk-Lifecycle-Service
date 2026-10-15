@@ -1,12 +1,12 @@
 # Progress Tracker — rag-chunk-lifecycle-service
 
 ## Current Phase
-**Phase 3 Complete: Section CDC Invalidation, Ingress gRPC Server & Administrative Quarantine API (Weeks 5–6)**
+**Phase 4 Complete: Load Testing, Decoupled Read Path, GitOps ArgoCD & Production Hardening (Weeks 7–8)**
 
 ---
 
 ## Current Goal
-Proceed with Phase 4: Production Hardening, Apache Arrow Flight Integration, Stress Benchmarking (25k chunks/sec), and Kubernetes Deployment Posture.
+All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, hardened, and verified with zero drift across Doc API and architecture specifications.
 
 ---
 
@@ -70,21 +70,37 @@ Proceed with Phase 4: Production Hardening, Apache Arrow Flight Integration, Str
   - Implemented REST HTTP Router and `QuarantineHandler` mounting all OpenAPI routes, health probes, and conflict resolution endpoints.
   - Implemented decoupled binaries adhering to ADR-003:
     - `cmd/chunk-server/main.go` running concurrent gRPC (50051) and REST HTTP (8080) servers with graceful shutdown.
-    - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler` and `--task=warm-parent-cache` for Runbook 3 cache drift recovery.
+    - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler`, `--task=warm-parent-cache`, and `--task=healthcheck`.
   - Built comprehensive unit test suites (`reconcile_cdc_update_test.go`, `resolve_quarantine_test.go`, `grpc_chunk_handler_test.go`, `http_quarantine_handler_test.go`, `patch_repo_test.go`, `section_reconciler_test.go`) achieving 100% pass rate across 38 tests.
-- [x] Pressure-tested and finalized [prompts/phase-4-load-testing-and-gitops-argocd.md](prompts/phase-4-load-testing-and-gitops-argocd.md) against `tasks/` architectural specifications with ArgoCD Canary Rollouts, AnalysisTemplate, Pod Anti-Affinity, PrometheusRule CRD, Backpressure verification, and Go 1.26 toolchain alignment.
-
----
-
-## In Progress
-- [ ] Phase 4: Apache Arrow Flight, Stress Testing (25k chunks/sec), Containerization & CI/CD.
-
----
-
-## Next Up
-1. Implement Apache Arrow Flight columnar receiver adapter (`internal/infrastructure/flight/`).
-2. Implement 25,000 chunks/sec performance stress benchmark suite (`test/performance/`).
-3. Create distroless multi-stage Docker container (`deployments/docker/Dockerfile`) and Kubernetes Helm charts (`deployments/helm/`).
+- [x] **Phase 4 Implementation Complete**:
+  - Zero-Trust Distroless Dockerfile (`deployments/docker/Dockerfile`) & `.dockerignore`: Multi-stage build targeting `gcr.io/distroless/static:nonroot` with UID 65532:65532, zero shell, read-only root filesystems, packaging statically linked `chunk-server` and `reconciliation-worker`.
+  - Production Helm Chart Architecture (`deployments/helm/`):
+    - `Chart.yaml`, `values.yaml`, `_helpers.tpl`, `configmap.yaml`, `secret.yaml`, `serviceaccount.yaml`.
+    - Decoupled deployments: `deployment-chunk-server.yaml` and `deployment-reconciliation-worker.yaml`.
+    - Routing services: `service-chunk-server.yaml`, `service-chunk-server-stable.yaml`, `service-chunk-server-canary.yaml`.
+    - Availability & Scaling: Multi-AZ `podAntiAffinity`, `poddisruptionbudget.yaml` (`minAvailable: 2`), `hpa.yaml` (65% CPU target).
+    - Production Alerts: `prometheusrule.yaml` defining alerts for Quarantine Spike (>2%), P99 Compilation Latency (>200ms), and High Memory Pressure (>80% of 1.5GiB).
+  - Declarative GitOps ArgoCD & Canary Strategy (`deployments/argocd/`):
+    - `application-chunk-server.yaml` and `application-reconciliation-worker.yaml` with automated drift detection (`selfHeal: true`, `prune: true`).
+    - Multi-environment `applicationset.yaml` covering `dev`, `staging`, and `production`.
+    - Argo Rollouts Canary `rollout-chunk-server.yaml` with 10% -> 25% -> 100% traffic progression.
+    - Automated metric analysis `analysistemplate.yaml` verifying latency (P99 <= 120ms) and quarantine budget (<= 2%).
+  - Pure-Go Apache Arrow Flight Columnar Receiver Adapter (`internal/infrastructure/flight/flight_receiver.go`):
+    - Pure-Go implementation (`CGO_ENABLED=0` compatible) decoding columnar RecordBatch schemas (`tenant_id`, `document_id`, `normalized_content`, `structural_path`, `token_count`, `sequence_index`).
+    - Enforces child token bounds [100, 300], calculates deterministic ADR-001 Chunk IDs, and promotes batches via `command.IngestChunkBatchHandler`.
+    - Enforces stream backpressure limits returning `ErrBackpressureSaturated`.
+    - Comprehensive unit test suite (`test/unit/flight_receiver_test.go`).
+  - Performance, Scale & Stress Benchmark Suite (`test/performance/load_test.go` with build tag `//go:build performance`):
+    - 25,000 Chunks/Sec Ingestion Benchmark.
+    - Sub-8ms Decoupled Read Path Verification against `RedisParentCache` under 2,000 RPS.
+    - Ingestion Backpressure & Saturation Verification (`codes.ResourceExhausted`).
+    - Memory & Allocation Bounds Profiling ensuring RSS remains stably below 1.2 GiB.
+  - CI Pipeline & Tooling Enhancement:
+    - Updated `Makefile` with `docker-build`, `helm-lint`, and `test-performance` targets.
+    - Enhanced `.github/workflows/ci.yml` with Helm linting, template validation, and container builds.
+  - Doc API & Spec Synchronization:
+    - Updated `api/openapi/openapi.yaml` with Arrow Flight schemas (`ColumnarRecordBatchModel`, `FlightIngestResultModel`).
+    - Updated `.ai/doc-api.md` with Apache Arrow Flight columnar ingress standards.
 
 ---
 
