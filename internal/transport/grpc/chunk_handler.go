@@ -19,10 +19,15 @@ import (
 
 var _ chunkv1.ChunkLifecycleServiceServer = (*ChunkHandler)(nil)
 
+type chunkBatchIngestor interface {
+	Execute(ctx context.Context, cmd command.IngestChunkBatchCommand) (*command.IngestChunkBatchResult, error)
+}
+
 // ChunkHandler implements the gRPC ChunkLifecycleServiceServer interface.
 type ChunkHandler struct {
 	chunkv1.UnimplementedChunkLifecycleServiceServer
 	ingestHandler       *command.IngestChunkBatchHandler
+	ingestExecutor      chunkBatchIngestor
 	getParentHandler    *query.GetParentContainerHandler
 	reconcileCDCHandler *command.ReconcileCDCUpdateHandler
 	applyPatchHandler   *command.ApplySectionPatchHandler
@@ -41,11 +46,17 @@ func NewChunkHandler(
 ) *ChunkHandler {
 	return &ChunkHandler{
 		ingestHandler:       ingestHandler,
+		ingestExecutor:      ingestHandler,
 		getParentHandler:    getParentHandler,
 		reconcileCDCHandler: reconcileCDCHandler,
 		applyPatchHandler:   applyPatchHandler,
 		maxInFlightStreams:  500, // Maximum concurrent streaming ingestion connections
 	}
+}
+
+// SetIngestExecutorForTest overrides the chunk batch executor for testing error classification.
+func (h *ChunkHandler) SetIngestExecutorForTest(executor chunkBatchIngestor) {
+	h.ingestExecutor = executor
 }
 
 // SetMaxInFlightStreams configures the maximum concurrent streaming ingestion streams for backpressure testing.
@@ -148,12 +159,16 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 		Chunks:          domainChunks,
 	}
 
-	res, err := h.ingestHandler.Execute(stream.Context(), cmd)
+	executor := h.ingestExecutor
+	if executor == nil {
+		executor = h.ingestHandler
+	}
+	res, err := executor.Execute(stream.Context(), cmd)
 	if err != nil {
 		if errors.Is(err, entity.ErrTokenBudgetViolation) {
 			return status.Errorf(codes.InvalidArgument, "token budget violation: %v", err)
 		}
-		if strings.Contains(err.Error(), "pool") || strings.Contains(err.Error(), "saturated") || strings.Contains(err.Error(), "exhausted") || strings.Contains(err.Error(), "too many") {
+		if errors.Is(err, command.ErrPoolSaturation) {
 			return status.Errorf(codes.ResourceExhausted, "resource exhausted: %v", err)
 		}
 		return status.Errorf(codes.Internal, "batch ingestion execution failed: %v", err)

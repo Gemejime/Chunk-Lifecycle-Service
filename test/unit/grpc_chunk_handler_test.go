@@ -2,11 +2,13 @@ package unit
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -236,5 +238,131 @@ func TestTenantInterceptor_Validation(t *testing.T) {
 	)
 	if err != nil || res != "ok" {
 		t.Fatalf("Expected interceptor to succeed, got %v", err)
+	}
+}
+
+type mockIngestExecutor struct {
+	result *command.IngestChunkBatchResult
+	err    error
+}
+
+func (m *mockIngestExecutor) Execute(ctx context.Context, cmd command.IngestChunkBatchCommand) (*command.IngestChunkBatchResult, error) {
+	return m.result, m.err
+}
+
+func TestGRPCHandler_BatchIngestChunks_PoolSaturationClassification(t *testing.T) {
+	handler := grpcTransport.NewChunkHandler(nil, nil, nil, nil)
+	executor := &mockIngestExecutor{
+		err: command.ErrPoolSaturation,
+	}
+	handler.SetIngestExecutorForTest(executor)
+
+	stream := &mockIngestStream{
+		ctx: context.Background(),
+		requests: []*chunkv1.IngestChunkRequest{
+			{
+				BatchId: "batch-sat",
+				Chunk: &chunkv1.ChunkNode{
+					ChunkId:        strings.Repeat("a", 64),
+					TenantId:       "tenant-test",
+					Content:        "Valid content with sufficient tokens.",
+					TokenCount:     150,
+					StructuralPath: "doc/sec_1/para_1",
+				},
+			},
+		},
+	}
+
+	err := handler.BatchIngestChunks(stream)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.ResourceExhausted {
+		t.Fatalf("expected codes.ResourceExhausted for ErrPoolSaturation, got %s", st.Code())
+	}
+}
+
+func TestGRPCHandler_BatchIngestChunks_DeadlineExceeded_TreatedAsInternal(t *testing.T) {
+	handler := grpcTransport.NewChunkHandler(nil, nil, nil, nil)
+	executor := &mockIngestExecutor{
+		err: context.DeadlineExceeded,
+	}
+	handler.SetIngestExecutorForTest(executor)
+
+	stream := &mockIngestStream{
+		ctx: context.Background(),
+		requests: []*chunkv1.IngestChunkRequest{
+			{
+				BatchId: "batch-deadline",
+				Chunk: &chunkv1.ChunkNode{
+					ChunkId:        strings.Repeat("a", 64),
+					TenantId:       "tenant-test",
+					Content:        "Valid content with sufficient tokens.",
+					TokenCount:     150,
+					StructuralPath: "doc/sec_1/para_1",
+				},
+			},
+		},
+	}
+
+	err := handler.BatchIngestChunks(stream)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Internal {
+		t.Fatalf("expected codes.Internal for context.DeadlineExceeded alone, got %s", st.Code())
+	}
+}
+
+func TestGRPCHandler_BatchIngestChunks_GenericInternalError(t *testing.T) {
+	handler := grpcTransport.NewChunkHandler(nil, nil, nil, nil)
+	executor := &mockIngestExecutor{
+		err: errors.New("unexpected database disk failure"),
+	}
+	handler.SetIngestExecutorForTest(executor)
+
+	stream := &mockIngestStream{
+		ctx: context.Background(),
+		requests: []*chunkv1.IngestChunkRequest{
+			{
+				BatchId: "batch-internal",
+				Chunk: &chunkv1.ChunkNode{
+					ChunkId:        strings.Repeat("a", 64),
+					TenantId:       "tenant-test",
+					Content:        "Valid content with sufficient tokens.",
+					TokenCount:     150,
+					StructuralPath: "doc/sec_1/para_1",
+				},
+			},
+		},
+	}
+
+	err := handler.BatchIngestChunks(stream)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.Internal {
+		t.Fatalf("expected codes.Internal for unexpected error, got %s", st.Code())
+	}
+}
+
+func TestCommand_IsPoolSaturated(t *testing.T) {
+	// context.DeadlineExceeded alone without pool or confirmed saturation is not pool saturation
+	if command.IsPoolSaturated(nil, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded alone to not be pool saturation")
+	}
+
+	// generic internal error is not pool saturation
+	if command.IsPoolSaturated(nil, errors.New("connection reset by peer")) {
+		t.Fatalf("expected generic error to not be pool saturation")
+	}
+
+	// PostgreSQL 53300 too_many_connections is confirmed pool saturation
+	pgErr := &pgconn.PgError{Code: "53300"}
+	if !command.IsPoolSaturated(nil, pgErr) {
+		t.Fatalf("expected pgconn error 53300 to be classified as pool saturation")
 	}
 }

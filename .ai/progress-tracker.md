@@ -101,6 +101,11 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Doc API & Spec Synchronization:
     - Updated `api/openapi/openapi.yaml` with Arrow Flight schemas (`ColumnarRecordBatchModel`, `FlightIngestResultModel`).
     - Updated `.ai/doc-api.md` with Apache Arrow Flight columnar ingress standards.
+- [x] **Code Review Feedback Resolution**:
+  - Pinned `golangci-lint` to `v1.64.8` (built with Go 1.26+) in `.github/workflows/ci.yml` while preserving `go-version-file: 'go.mod'`.
+  - Replaced error substring matching in `BatchIngestChunks` (`internal/transport/grpc/chunk_handler.go`) with `errors.Is` against dedicated sentinel `command.ErrPoolSaturation`.
+  - Defined `command.ErrPoolSaturation` and `command.IsPoolSaturated` in `internal/application/command/ingest_chunk_batch.go` to confirm pool saturation without treating standalone `context.DeadlineExceeded` as saturation.
+  - Added unit test cases in `test/unit/grpc_chunk_handler_test.go` verifying saturation error classification, deadline exceeded isolation, and generic error handling.
 
 ---
 

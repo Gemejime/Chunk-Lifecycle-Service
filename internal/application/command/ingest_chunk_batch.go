@@ -3,11 +3,13 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/compiler"
@@ -15,6 +17,26 @@ import (
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/repository"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/infrastructure/telemetry"
 )
+
+// ErrPoolSaturation indicates that the database connection pool is saturated and cannot accept new connections or transactions.
+var ErrPoolSaturation = errors.New("database connection pool saturated")
+
+// IsPoolSaturated checks whether a pool acquisition failure represents confirmed pool saturation.
+// Context timeouts or deadline exceeded errors alone are not treated as saturation unless the pool is confirmed full.
+func IsPoolSaturated(pool *pgxpool.Pool, err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "53300" { // 53300: too_many_connections
+		return true
+	}
+	if pool == nil {
+		return false
+	}
+	stat := pool.Stat()
+	if stat.MaxConns() > 0 && (stat.AcquiredConns() >= stat.MaxConns() || (stat.TotalConns() >= stat.MaxConns() && stat.IdleConns() == 0)) {
+		return true
+	}
+	return false
+}
 
 // IngestChunkBatchCommand contains parameters for batch child chunk ingestion.
 type IngestChunkBatchCommand struct {
@@ -110,6 +132,9 @@ func (h *IngestChunkBatchHandler) Execute(
 	if h.pool != nil {
 		tx, bErr := h.pool.Begin(ctx)
 		if bErr != nil {
+			if IsPoolSaturated(h.pool, bErr) {
+				return nil, fmt.Errorf("%w: %v", ErrPoolSaturation, bErr)
+			}
 			return nil, fmt.Errorf("failed beginning ingestion transaction: %w", bErr)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
@@ -182,6 +207,9 @@ func (h *IngestChunkBatchHandler) Execute(
 		}
 
 		if err := tx.Commit(ctx); err != nil {
+			if IsPoolSaturated(h.pool, err) {
+				return nil, fmt.Errorf("%w: %v", ErrPoolSaturation, err)
+			}
 			return nil, fmt.Errorf("failed committing batch ingestion transaction: %w", err)
 		}
 	}
