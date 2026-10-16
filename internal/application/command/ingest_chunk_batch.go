@@ -143,18 +143,14 @@ func (h *IngestChunkBatchHandler) Execute(
 			}
 		}
 
-		// Insert or update document_manifests
+		// Insert document_manifests (plain insert to enforce one batch per manifest version)
 		_, err = tx.Exec(ctx, `
 			INSERT INTO document_manifests (
 				tenant_id, document_id, version, chunk_count, total_tokens, status, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, 'ACTIVE', NOW(), NOW())
-			ON CONFLICT (tenant_id, document_id, version) DO UPDATE SET
-				chunk_count = EXCLUDED.chunk_count,
-				total_tokens = EXCLUDED.total_tokens,
-				updated_at = NOW();
+			) VALUES ($1, $2, $3, $4, $5, 'ACTIVE', NOW(), NOW());
 		`, tenantID, documentID, targetVersion, len(cmd.Chunks), totalTokens)
 		if err != nil {
-			return nil, fmt.Errorf("failed upserting document manifest v%d: %w", targetVersion, err)
+			return nil, fmt.Errorf("failed inserting document manifest v%d: %w", targetVersion, err)
 		}
 
 		// Insert manifest_chunk_bindings

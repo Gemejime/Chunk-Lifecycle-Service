@@ -188,10 +188,10 @@ func (p *SectionPatch) Reactivate(newBaseHash ...string) error {
 	if len(newBaseHash) > 0 && strings.TrimSpace(newBaseHash[0]) != "" {
 		hash := strings.ToLower(strings.TrimSpace(newBaseHash[0]))
 		p.baseContentHash = hash
-		p.upstreamContent = ""
-		p.upstreamContentHash = ""
-		p.conflictDetectedAt = time.Time{}
 	}
+	p.upstreamContent = ""
+	p.upstreamContentHash = ""
+	p.conflictDetectedAt = time.Time{}
 	p.status = PatchStatusActive
 	p.updatedAt = time.Now().UTC()
 	return nil

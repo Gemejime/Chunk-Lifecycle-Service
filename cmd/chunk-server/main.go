@@ -64,11 +64,11 @@ func main() {
 	var err error
 	pool, err = postgres.NewConnectionPool(ctx, poolCfg)
 	if err != nil {
-		slog.Warn("could not connect to postgres pool; starting in degraded mode", slog.String("error", err.Error()))
-	} else {
-		defer pool.Close()
-		slog.Info("connected to postgres pool")
+		slog.Error("could not connect to postgres pool; exiting startup", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
+	defer pool.Close()
+	slog.Info("connected to postgres pool")
 
 	// 3. Initialize Redis Client & ParentCache Adapter
 	var rdb redis.UniversalClient
@@ -118,6 +118,7 @@ func main() {
 		Addr:              ":" + httpPort,
 		Handler:           httpRouter,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
 	}
 
 	// 7. Assemble gRPC Server

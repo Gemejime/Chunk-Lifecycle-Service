@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/application/command"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/application/query"
+	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/compiler"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/entity"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/infrastructure/telemetry"
 )
@@ -223,6 +225,7 @@ func handleRESTBatchIngest(
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	var req restBatchIngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "malformed JSON request body", r)
@@ -234,6 +237,7 @@ func handleRESTBatchIngest(
 		traceID = uuid.New().String()
 	}
 
+	hasher := compiler.NewContentHasher()
 	var domainChunks []*entity.ChunkNode
 	for idx, c := range req.Chunks {
 		if c.TokenCount < entity.MinChunkTokenBudget || c.TokenCount > entity.MaxChunkTokenBudget {
@@ -241,7 +245,7 @@ func handleRESTBatchIngest(
 				fmt.Sprintf("chunk index %d violates token budget [100, 300]", idx), r)
 			return
 		}
-		chunkID := fmt.Sprintf("%x", uuid.NewMD5(uuid.Nil, []byte(c.StructuralPath+c.Content)))
+		chunkID := hasher.ComputeChunkID(tenantID, c.Content, c.StructuralPath)
 		node, err := entity.NewChunkNode(
 			chunkID,
 			tenantID,
@@ -302,6 +306,7 @@ func handleRESTApplyPatch(
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	var req restApplyPatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "malformed JSON request body", r)
@@ -325,11 +330,20 @@ func handleRESTApplyPatch(
 		RequestID:        uuid.New().String(),
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "base content hash does not match") {
+		if errors.Is(err, entity.ErrStaleBaseHash) || strings.Contains(err.Error(), "base content hash does not match") {
 			writeJSONError(w, http.StatusConflict, "STALE_BASE_HASH", "base content hash mismatch", r)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error(), r)
+		if errors.Is(err, entity.ErrEmptySectionKey) ||
+			errors.Is(err, entity.ErrEmptyBaseContentHash) ||
+			errors.Is(err, entity.ErrEmptyOperatorID) ||
+			errors.Is(err, entity.ErrEmptyTenantID) ||
+			errors.Is(err, entity.ErrEmptyDocumentID) ||
+			errors.Is(err, entity.ErrInvalidPatchStatusTransition) {
+			writeJSONError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error(), r)
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed applying section patch", r)
 		return
 	}
 

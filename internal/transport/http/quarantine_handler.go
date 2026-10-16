@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -191,8 +192,12 @@ func (h *QuarantineHandler) AcceptUpstream(w http.ResponseWriter, r *http.Reques
 		RequestID: uuid.New().String(),
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, entity.ErrPatchNotFound) || strings.Contains(err.Error(), "not found") {
 			writeJSONError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), r)
+			return
+		}
+		if errors.Is(err, entity.ErrInvalidPatchStatusTransition) {
+			writeJSONError(w, http.StatusConflict, "CONFLICT", err.Error(), r)
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed accepting upstream content", r)
@@ -232,8 +237,12 @@ func (h *QuarantineHandler) ReapplyOverride(w http.ResponseWriter, r *http.Reque
 		RequestID: uuid.New().String(),
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, entity.ErrPatchNotFound) || strings.Contains(err.Error(), "not found") {
 			writeJSONError(w, http.StatusNotFound, "NOT_FOUND", err.Error(), r)
+			return
+		}
+		if errors.Is(err, entity.ErrInvalidPatchStatusTransition) {
+			writeJSONError(w, http.StatusConflict, "CONFLICT", err.Error(), r)
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed reapplying override", r)

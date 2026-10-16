@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -64,7 +65,10 @@ func main() {
 			slog.Error("task 'warm-parent-cache' requires --tenant-id and --document-id flags")
 			os.Exit(1)
 		}
-		executeCacheWarming(ctx, pgConnStr, cache, *tenantID, *documentID, *version)
+		if err := executeCacheWarming(ctx, pgConnStr, cache, *tenantID, *documentID, *version); err != nil {
+			slog.Error("cache warming task failed", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
 
 	case "run-reconciler":
 		slog.Info("reconciler worker loop running; waiting for CDC events or graceful termination")
@@ -87,7 +91,7 @@ func executeCacheWarming(
 	cache *redisCache.RedisParentCache,
 	tenantID, documentID string,
 	manifestVersion int64,
-) {
+) error {
 	slog.Info("initiating Runbook 3 cache drift recovery",
 		slog.String("tenant_id", tenantID),
 		slog.String("document_id", documentID),
@@ -97,7 +101,7 @@ func executeCacheWarming(
 	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
 		slog.Error("failed connecting to postgres read-replica for cache backfill", slog.String("error", err.Error()))
-		return
+		return fmt.Errorf("failed connecting to postgres read-replica: %w", err)
 	}
 	defer func() { _ = conn.Close(ctx) }()
 
@@ -110,7 +114,7 @@ func executeCacheWarming(
 		`, tenantID, documentID).Scan(&targetVersion)
 		if err != nil || targetVersion == 0 {
 			slog.Error("no active document manifest found for document", slog.String("document_id", documentID))
-			return
+			return fmt.Errorf("no active document manifest found for document %s: %w", documentID, err)
 		}
 	}
 
@@ -123,7 +127,7 @@ func executeCacheWarming(
 	rows, err := conn.Query(ctx, query, tenantID, documentID, targetVersion)
 	if err != nil {
 		slog.Error("failed querying parent containers from database", slog.String("error", err.Error()))
-		return
+		return fmt.Errorf("failed querying parent containers: %w", err)
 	}
 	defer rows.Close()
 
@@ -141,28 +145,34 @@ func executeCacheWarming(
 		)
 		if err := rows.Scan(&parentID, &tID, &dID, &mv, &hPath, &content, &tokens, &children); err != nil {
 			slog.Error("failed scanning parent row", slog.String("error", err.Error()))
-			return
+			return fmt.Errorf("failed scanning parent row: %w", err)
 		}
 		container, cErr := entity.NewParentContainer(parentID, tID, dID, mv, hPath, content, tokens, children)
 		if cErr != nil {
 			slog.Error("failed assembling parent container entity", slog.String("error", cErr.Error()))
-			return
+			return fmt.Errorf("failed assembling parent container entity: %w", cErr)
 		}
 		containers = append(containers, container)
 	}
 
+	if err := rows.Err(); err != nil {
+		slog.Error("failed during parent row iteration", slog.String("error", err.Error()))
+		return fmt.Errorf("error during parent container row iteration: %w", err)
+	}
+
 	if len(containers) == 0 {
 		slog.Warn("no parent containers found for cache warming", slog.Int64("version", targetVersion))
-		return
+		return nil
 	}
 
 	if err := cache.SetBatch(ctx, containers, 24*time.Hour); err != nil {
 		slog.Error("failed backfilling parent containers into redis", slog.String("error", err.Error()))
-		return
+		return fmt.Errorf("failed backfilling parent containers into redis: %w", err)
 	}
 
 	slog.Info("cache drift recovery completed successfully",
 		slog.Int("containers_warmed", len(containers)),
 		slog.Int64("manifest_version", targetVersion),
 	)
+	return nil
 }

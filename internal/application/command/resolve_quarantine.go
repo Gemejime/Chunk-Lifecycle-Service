@@ -95,10 +95,10 @@ func (h *AcceptUpstreamCDCHandler) Execute(
 		return nil, fmt.Errorf("failed fetching patch: %w", err)
 	}
 	if patch == nil {
-		return nil, fmt.Errorf("patch %s not found", patchID)
+		return nil, fmt.Errorf("%w: patch %s not found", entity.ErrPatchNotFound, patchID)
 	}
 	if patch.Status() != entity.PatchStatusStaleQuarantine {
-		return nil, fmt.Errorf("patch is in status %s, expected SECTION_STALE_QUARANTINE", patch.Status())
+		return nil, fmt.Errorf("%w: patch is in status %s, expected SECTION_STALE_QUARANTINE", entity.ErrInvalidPatchStatusTransition, patch.Status())
 	}
 
 	if err := patch.Supersede(); err != nil {
@@ -125,14 +125,22 @@ func (h *AcceptUpstreamCDCHandler) Execute(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Update patch in database
-	_, err = tx.Exec(ctx, `
+	// Document-level serialization lock held until commit/rollback to serialize manifest versions
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2));`, tenantID, documentID); err != nil {
+		return nil, fmt.Errorf("failed acquiring document lock: %w", err)
+	}
+
+	// Update patch in database (compare-and-set)
+	res, err := tx.Exec(ctx, `
 		UPDATE section_patches
 		SET status = 'SUPERSEDED', updated_at = NOW()
-		WHERE tenant_id = $1 AND patch_id = $2;
+		WHERE tenant_id = $1 AND patch_id = $2 AND status = 'SECTION_STALE_QUARANTINE';
 	`, tenantID, patchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed updating patch status: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return nil, fmt.Errorf("%w: patch %s is not in SECTION_STALE_QUARANTINE status", entity.ErrInvalidPatchStatusTransition, patchID)
 	}
 
 	var currentVersion int64
@@ -148,12 +156,12 @@ func (h *AcceptUpstreamCDCHandler) Execute(
 
 	nextVersion := currentVersion + 1
 
-	existingChunks, err := h.loadUnmodifiedChunks(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
+	existingChunks, insertIdx, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading existing chunks: %w", err)
 	}
 
-	combinedChunks := append(existingChunks, newChildChunks...)
+	combinedChunks := insertChunks(existingChunks, newChildChunks, insertIdx)
 	for _, ch := range combinedChunks {
 		totalTokens += ch.TokenCount()
 	}
@@ -320,10 +328,10 @@ func (h *ReapplyOverrideHandler) Execute(
 		return nil, fmt.Errorf("failed fetching patch: %w", err)
 	}
 	if patch == nil {
-		return nil, fmt.Errorf("patch %s not found", patchID)
+		return nil, fmt.Errorf("%w: patch %s not found", entity.ErrPatchNotFound, patchID)
 	}
 	if patch.Status() != entity.PatchStatusStaleQuarantine {
-		return nil, fmt.Errorf("patch is in status %s, expected SECTION_STALE_QUARANTINE", patch.Status())
+		return nil, fmt.Errorf("%w: patch is in status %s, expected SECTION_STALE_QUARANTINE", entity.ErrInvalidPatchStatusTransition, patch.Status())
 	}
 
 	newBaseHash := patch.UpstreamContentHash()
@@ -355,8 +363,13 @@ func (h *ReapplyOverrideHandler) Execute(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Update patch in database
-	_, err = tx.Exec(ctx, `
+	// Document-level serialization lock held until commit/rollback to serialize manifest versions
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2));`, tenantID, documentID); err != nil {
+		return nil, fmt.Errorf("failed acquiring document lock: %w", err)
+	}
+
+	// Update patch in database (compare-and-set)
+	res, err := tx.Exec(ctx, `
 		UPDATE section_patches
 		SET status = 'ACTIVE',
 		    base_content_hash = $1,
@@ -364,10 +377,13 @@ func (h *ReapplyOverrideHandler) Execute(
 		    upstream_content_hash = NULL,
 		    conflict_detected_at = NULL,
 		    updated_at = NOW()
-		WHERE tenant_id = $2 AND patch_id = $3;
+		WHERE tenant_id = $2 AND patch_id = $3 AND status = 'SECTION_STALE_QUARANTINE';
 	`, newBaseHash, tenantID, patchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed reactivating section patch in database: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return nil, fmt.Errorf("%w: patch %s is not in SECTION_STALE_QUARANTINE status", entity.ErrInvalidPatchStatusTransition, patchID)
 	}
 
 	var currentVersion int64
@@ -383,12 +399,12 @@ func (h *ReapplyOverrideHandler) Execute(
 
 	nextVersion := currentVersion + 1
 
-	existingChunks, err := h.loadUnmodifiedChunks(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
+	existingChunks, insertIdx, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading existing chunks: %w", err)
 	}
 
-	combinedChunks := append(existingChunks, newChildChunks...)
+	combinedChunks := insertChunks(existingChunks, newChildChunks, insertIdx)
 	for _, ch := range combinedChunks {
 		totalTokens += ch.TokenCount()
 	}
@@ -511,7 +527,8 @@ func (h *AcceptUpstreamCDCHandler) loadUnmodifiedChunks(
 	manifestVersion int64,
 	modifiedSectionKey string,
 ) ([]*entity.ChunkNode, error) {
-	return loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
+	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
+	return chunks, err
 }
 
 func (h *AcceptUpstreamCDCHandler) sliceContentIntoChunks(
@@ -527,7 +544,8 @@ func (h *ReapplyOverrideHandler) loadUnmodifiedChunks(
 	manifestVersion int64,
 	modifiedSectionKey string,
 ) ([]*entity.ChunkNode, error) {
-	return loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
+	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
+	return chunks, err
 }
 
 func (h *ReapplyOverrideHandler) sliceContentIntoChunks(
@@ -536,15 +554,26 @@ func (h *ReapplyOverrideHandler) sliceContentIntoChunks(
 	return sliceTextIntoChunks(h.hasher, tenantID, sectionKey, text)
 }
 
+func insertChunks(existing []*entity.ChunkNode, newChunks []*entity.ChunkNode, insertIdx int) []*entity.ChunkNode {
+	if insertIdx < 0 || insertIdx > len(existing) {
+		insertIdx = len(existing)
+	}
+	combined := make([]*entity.ChunkNode, 0, len(existing)+len(newChunks))
+	combined = append(combined, existing[:insertIdx]...)
+	combined = append(combined, newChunks...)
+	combined = append(combined, existing[insertIdx:]...)
+	return combined
+}
+
 func loadChunksExcludingSection(
 	ctx context.Context,
 	tx pgx.Tx,
 	tenantID, documentID string,
 	manifestVersion int64,
 	modifiedSectionKey string,
-) ([]*entity.ChunkNode, error) {
+) ([]*entity.ChunkNode, int, error) {
 	if manifestVersion <= 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	query := `
@@ -558,11 +587,12 @@ func loadChunksExcludingSection(
 
 	rows, err := tx.Query(ctx, query, tenantID, documentID, manifestVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed querying existing manifest chunks: %w", err)
+		return nil, 0, fmt.Errorf("failed querying existing manifest chunks: %w", err)
 	}
 	defer rows.Close()
 
 	var result []*entity.ChunkNode
+	firstExcludedIdx := -1
 	for rows.Next() {
 		var (
 			cID        string
@@ -577,11 +607,14 @@ func loadChunksExcludingSection(
 		)
 
 		if err := rows.Scan(&cID, &tID, &pID, &content, &tokenCount, &sPath, &bStart, &bEnd, &rawMeta); err != nil {
-			return nil, fmt.Errorf("failed scanning chunk row: %w", err)
+			return nil, 0, fmt.Errorf("failed scanning chunk row: %w", err)
 		}
 
 		secKey := compiler.ExtractSectionKey(sPath)
 		if secKey == modifiedSectionKey {
+			if firstExcludedIdx == -1 {
+				firstExcludedIdx = len(result)
+			}
 			continue
 		}
 
@@ -592,13 +625,17 @@ func loadChunksExcludingSection(
 
 		node, err := entity.NewChunkNode(cID, tID, pID, content, tokenCount, sPath, bStart, bEnd, meta)
 		if err != nil {
-			return nil, fmt.Errorf("failed assembling chunk node: %w", err)
+			return nil, 0, fmt.Errorf("failed assembling chunk node: %w", err)
 		}
 
 		result = append(result, node)
 	}
 
-	return result, rows.Err()
+	if firstExcludedIdx == -1 {
+		firstExcludedIdx = len(result)
+	}
+
+	return result, firstExcludedIdx, rows.Err()
 }
 
 func sliceTextIntoChunks(

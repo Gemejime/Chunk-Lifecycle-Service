@@ -129,17 +129,20 @@ func (h *ReconcileCDCUpdateHandler) Execute(
 
 			// Save updated patch state
 			if activePatch != nil {
-				_, uErr := tx.Exec(ctx, `
+				res, uErr := tx.Exec(ctx, `
 					UPDATE section_patches
 					SET status = 'SECTION_STALE_QUARANTINE',
 					    upstream_content = $1,
 					    upstream_content_hash = $2,
 					    conflict_detected_at = $3,
 					    updated_at = NOW()
-					WHERE tenant_id = $4 AND patch_id = $5;
+					WHERE tenant_id = $4 AND patch_id = $5 AND status = 'ACTIVE';
 				`, activePatch.UpstreamContent(), activePatch.UpstreamContentHash(), activePatch.ConflictDetectedAt(), tenantID, activePatch.PatchID())
 				if uErr != nil {
 					return nil, fmt.Errorf("failed persisting quarantined patch: %w", uErr)
+				}
+				if res.RowsAffected() == 0 {
+					return nil, fmt.Errorf("%w: patch %s is not in ACTIVE status", entity.ErrInvalidPatchStatusTransition, activePatch.PatchID())
 				}
 
 				// Emit outbox alert notification
@@ -184,7 +187,17 @@ func (h *ReconcileCDCUpdateHandler) Execute(
 		}, nil
 	}
 
-	// 4. Handle CLEAN PROMOTION branch
+	// 4. Handle CLEAN OVERLAY branch: upstream matches active patch base hash, preserve active patch
+	if result.Decision == reconciliation.DecisionCleanOverlay {
+		return &ReconcileCDCResult{
+			Quarantined:        false,
+			PatchID:            result.PatchID,
+			Message:            result.Message,
+			NewManifestVersion: 0,
+		}, nil
+	}
+
+	// 5. Handle CLEAN PROMOTION branch
 	if h.pool == nil {
 		return &ReconcileCDCResult{
 			Quarantined:        false,
@@ -204,6 +217,11 @@ func (h *ReconcileCDCUpdateHandler) Execute(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Document-level serialization lock held until commit/rollback to serialize manifest versions
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2));`, tenantID, documentID); err != nil {
+		return nil, fmt.Errorf("failed acquiring document lock: %w", err)
+	}
+
 	var currentVersion int64
 	var totalTokens int
 	err = tx.QueryRow(ctx, `
@@ -217,12 +235,12 @@ func (h *ReconcileCDCUpdateHandler) Execute(
 
 	nextVersion := currentVersion + 1
 
-	existingChunks, err := h.loadUnmodifiedChunks(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
+	existingChunks, insertIdx, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, currentVersion, sectionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed loading existing chunks: %w", err)
 	}
 
-	combinedChunks := append(existingChunks, newChildChunks...)
+	combinedChunks := insertChunks(existingChunks, newChildChunks, insertIdx)
 	for _, ch := range combinedChunks {
 		totalTokens += ch.TokenCount()
 	}
@@ -342,127 +360,12 @@ func (h *ReconcileCDCUpdateHandler) loadUnmodifiedChunks(
 	manifestVersion int64,
 	modifiedSectionKey string,
 ) ([]*entity.ChunkNode, error) {
-	if manifestVersion <= 0 {
-		return nil, nil
-	}
-
-	query := `
-		SELECT c.chunk_id, c.tenant_id, c.parent_id, c.content, c.token_count,
-		       c.structural_path, c.byte_offset_start, c.byte_offset_end, c.metadata
-		FROM manifest_chunk_bindings b
-		JOIN chunk_nodes c ON b.tenant_id = c.tenant_id AND b.chunk_id = c.chunk_id
-		WHERE b.tenant_id = $1 AND b.document_id = $2 AND b.manifest_version = $3
-		ORDER BY b.ordinal_position ASC;
-	`
-
-	rows, err := tx.Query(ctx, query, tenantID, documentID, manifestVersion)
-	if err != nil {
-		return nil, fmt.Errorf("failed querying existing manifest chunks: %w", err)
-	}
-	defer rows.Close()
-
-	var result []*entity.ChunkNode
-	for rows.Next() {
-		var (
-			cID        string
-			tID        string
-			pID        string
-			content    string
-			tokenCount int
-			sPath      string
-			bStart     int64
-			bEnd       int64
-			rawMeta    []byte
-		)
-
-		if err := rows.Scan(&cID, &tID, &pID, &content, &tokenCount, &sPath, &bStart, &bEnd, &rawMeta); err != nil {
-			return nil, fmt.Errorf("failed scanning chunk row: %w", err)
-		}
-
-		secKey := compiler.ExtractSectionKey(sPath)
-		if secKey == modifiedSectionKey {
-			continue
-		}
-
-		var meta map[string]string
-		if len(rawMeta) > 0 {
-			_ = json.Unmarshal(rawMeta, &meta)
-		}
-
-		node, err := entity.NewChunkNode(cID, tID, pID, content, tokenCount, sPath, bStart, bEnd, meta)
-		if err != nil {
-			return nil, fmt.Errorf("failed assembling chunk node: %w", err)
-		}
-
-		result = append(result, node)
-	}
-
-	return result, rows.Err()
+	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
+	return chunks, err
 }
 
 func (h *ReconcileCDCUpdateHandler) sliceContentIntoChunks(
 	tenantID, documentID, sectionKey, text string,
 ) ([]*entity.ChunkNode, error) {
-	cleaned := strings.TrimSpace(text)
-	if cleaned == "" {
-		return nil, fmt.Errorf("upstream content must not be empty")
-	}
-
-	words := strings.Fields(cleaned)
-	if len(words) == 0 {
-		return nil, fmt.Errorf("upstream content must contain words")
-	}
-
-	const targetWordsPerChunk = 150
-	var chunks []*entity.ChunkNode
-	var offset int64
-	chunkIndex := 1
-
-	for i := 0; i < len(words); i += targetWordsPerChunk {
-		end := i + targetWordsPerChunk
-		if end > len(words) {
-			end = len(words)
-		}
-
-		chunkWords := words[i:end]
-		chunkText := strings.Join(chunkWords, " ")
-
-		tokenCount := int(float64(len(chunkWords)) * 1.3)
-		if tokenCount < entity.MinChunkTokenBudget {
-			tokenCount = entity.MinChunkTokenBudget
-		}
-		if tokenCount > entity.MaxChunkTokenBudget {
-			tokenCount = entity.MaxChunkTokenBudget
-		}
-
-		structuralPath := fmt.Sprintf("%s/para_%d", sectionKey, chunkIndex)
-		chunkID := h.hasher.ComputeChunkID(tenantID, chunkText, structuralPath)
-		byteLen := int64(len(chunkText))
-
-		meta := map[string]string{
-			"section_key":  sectionKey,
-			"heading_path": sectionKey,
-		}
-
-		node, err := entity.NewChunkNode(
-			chunkID,
-			tenantID,
-			"",
-			chunkText,
-			tokenCount,
-			structuralPath,
-			offset,
-			offset+byteLen,
-			meta,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed constructing child chunk node: %w", err)
-		}
-
-		chunks = append(chunks, node)
-		offset += byteLen + 1
-		chunkIndex++
-	}
-
-	return chunks, nil
+	return sliceTextIntoChunks(h.hasher, tenantID, sectionKey, text)
 }

@@ -98,9 +98,9 @@ This phase completes the high-performance ingress streaming plane, the pragmatic
    - **`chunk_handler.go`**:
      - Implements `chunkv1.ChunkLifecycleServiceServer`:
        - `BatchIngestChunks(stream IngestChunkRequest) returns (IngestChunkResponse)`:
-         - Micro-buffers incoming stream chunks in memory up to $\ge 500$ chunks before staging to prevent memory exhaustion.
+         - Micro-buffers incoming stream chunks in memory with a finite per-stream limit (up to 5,000 chunks or 50MB); rejects input exceeding that limit, or stages chunks incrementally with bounded memory.
          - Enforces token budget bounds (100–300 tokens per chunk), returning `codes.InvalidArgument` if violated.
-         - Enforces backpressure: if PostgreSQL pool acquisition wait exceeds threshold or write channel saturates, aborts stream with `codes.ResourceExhausted` (Runbook 2).
+         - Enforces backpressure: recognizes pool acquisition wait or write saturation errors from `ingestHandler.Execute` / persistence layer and returns `codes.ResourceExhausted` (Runbook 2) before generic `codes.Internal` fallback.
          - On stream completion (`io.EOF`), executes compilation, promotes manifest, and returns `IngestChunkResponse`.
        - `GetParentContainer(req) returns (GetParentContainerResponse)`: Low-latency context query delegating to `GetParentContainerHandler` ($P99 \le 8\text{ms}$).
        - `ReconcileCDCUpdate(req) returns (ReconcileCDCResponse)`: Delegating to `ReconcileCDCUpdateHandler`.

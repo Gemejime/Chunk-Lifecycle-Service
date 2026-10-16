@@ -47,4 +47,7 @@ var (
 
 	// ErrStaleBaseHash is returned when the operator patch base_content_hash does not match the active section content hash.
 	ErrStaleBaseHash = errors.New("base content hash does not match active section content")
+
+	// ErrPatchNotFound is returned when a requested section patch does not exist.
+	ErrPatchNotFound = errors.New("section patch not found")
 )

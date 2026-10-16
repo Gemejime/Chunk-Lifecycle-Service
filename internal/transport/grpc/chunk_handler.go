@@ -14,6 +14,7 @@ import (
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/application/command"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/application/query"
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/entity"
+	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/transport/grpc/interceptor"
 )
 
 var _ chunkv1.ChunkLifecycleServiceServer = (*ChunkHandler)(nil)
@@ -71,6 +72,9 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 	var manifestVersion int64
 	var domainChunks []*entity.ChunkNode
 
+	ctxTenant, _ := stream.Context().Value(interceptor.TenantContextKey).(string)
+	ctxTenant = strings.TrimSpace(ctxTenant)
+
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -85,6 +89,13 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 		}
 
 		c := req.GetChunk()
+		cTenant := strings.TrimSpace(c.GetTenantId())
+		cDoc := strings.TrimSpace(req.GetDocumentId())
+
+		if ctxTenant != "" && cTenant != "" && cTenant != ctxTenant {
+			return status.Errorf(codes.PermissionDenied, "chunk tenant %q does not match authenticated context tenant %q", cTenant, ctxTenant)
+		}
+
 		tokens := int(c.GetTokenCount())
 		if tokens < entity.MinChunkTokenBudget || tokens > entity.MaxChunkTokenBudget {
 			return status.Errorf(codes.InvalidArgument, "chunk %s token count %d violates budget bounds [100, 300]", c.GetChunkId(), tokens)
@@ -92,9 +103,19 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 
 		if batchID == "" {
 			batchID = req.GetBatchId()
-			documentID = req.GetDocumentId()
-			tenantID = c.GetTenantId()
+			documentID = cDoc
+			tenantID = cTenant
+			if tenantID == "" && ctxTenant != "" {
+				tenantID = ctxTenant
+			}
 			manifestVersion = req.GetManifestVersion()
+		} else {
+			if cTenant != "" && tenantID != "" && cTenant != tenantID {
+				return status.Errorf(codes.InvalidArgument, "chunk tenant %q differs from first chunk tenant %q", cTenant, tenantID)
+			}
+			if cDoc != "" && documentID != "" && cDoc != documentID {
+				return status.Errorf(codes.InvalidArgument, "chunk document %q differs from first chunk document %q", cDoc, documentID)
+			}
 		}
 
 		chunkNode, err := entity.NewChunkNode(
@@ -131,6 +152,9 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 	if err != nil {
 		if errors.Is(err, entity.ErrTokenBudgetViolation) {
 			return status.Errorf(codes.InvalidArgument, "token budget violation: %v", err)
+		}
+		if strings.Contains(err.Error(), "pool") || strings.Contains(err.Error(), "saturated") || strings.Contains(err.Error(), "exhausted") || strings.Contains(err.Error(), "too many") {
+			return status.Errorf(codes.ResourceExhausted, "resource exhausted: %v", err)
 		}
 		return status.Errorf(codes.Internal, "batch ingestion execution failed: %v", err)
 	}
