@@ -145,7 +145,6 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: document_id
           in: path
           required: true
@@ -153,7 +152,7 @@ paths:
             type: string
         - name: X-Trace-ID
           in: header
-          required: true
+          required: false
           schema:
             type: string
       requestBody:
@@ -161,14 +160,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BatchIngestChunksRequest'
+              $ref: '#/components/schemas/BatchIngestRequest'
       responses:
         '202':
           description: Chunks accepted for staging and compilation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BatchIngestChunksResponse'
+                $ref: '#/components/schemas/BatchIngestResponse'
         '400':
           description: Malformed payload or invalid hash formatting
           content:

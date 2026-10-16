@@ -56,6 +56,10 @@ func (w *BatchWriter) StageAndPromoteBatch(
 	ordinals := make([]int, len(chunks))
 
 	for i, chunk := range chunks {
+		if chunk.TenantID() != tenantID {
+			return nil, fmt.Errorf("%w: chunk tenant %q does not match batch tenant %q", entity.ErrEmptyTenantID, chunk.TenantID(), tenantID)
+		}
+
 		metaJSON, err := json.Marshal(chunk.Metadata())
 		if err != nil {
 			metaJSON = []byte("{}")
@@ -128,9 +132,12 @@ func (w *BatchWriter) StageAndPromoteBatch(
 		FROM unnest($4::text[], $5::int[]) AS t(chunk_id, ordinal_position)
 		ON CONFLICT (tenant_id, document_id, manifest_version, ordinal_position) DO NOTHING;
 	`
-	_, err = tx.Exec(ctx, bindingQuery, tenantID, documentID, manifestVersion, chunkIDs, ordinals)
+	bindingTag, err := tx.Exec(ctx, bindingQuery, tenantID, documentID, manifestVersion, chunkIDs, ordinals)
 	if err != nil {
 		return nil, fmt.Errorf("failed to bind chunks to manifest version: %w", err)
+	}
+	if int(bindingTag.RowsAffected()) != len(chunks) {
+		return nil, fmt.Errorf("binding conflict detected: expected %d bindings, inserted %d", len(chunks), bindingTag.RowsAffected())
 	}
 
 	// 5. Purge unlogged staging buffer for this batch

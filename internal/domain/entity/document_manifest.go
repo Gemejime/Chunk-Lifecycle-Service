@@ -60,6 +60,8 @@ func NewDocumentManifest(
 
 	if status == "" {
 		status = ManifestStatusActive
+	} else if status != ManifestStatusDraft && status != ManifestStatusActive && status != ManifestStatusFinalized {
+		return nil, fmt.Errorf("invalid manifest status %q: must be DRAFT, ACTIVE, or FINALIZED", status)
 	}
 
 	if createdAt.IsZero() {
@@ -78,9 +80,34 @@ func NewDocumentManifest(
 	}, nil
 }
 
+// ReconstructDocumentManifest rehydrates an existing DocumentManifest loaded from persistence.
+func ReconstructDocumentManifest(
+	documentID string,
+	tenantID string,
+	version int64,
+	chunkCount int,
+	totalTokens int,
+	status string,
+	createdAt time.Time,
+	updatedAt time.Time,
+) (*DocumentManifest, error) {
+	m, err := NewDocumentManifest(documentID, tenantID, version, chunkCount, totalTokens, status, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	if !updatedAt.IsZero() {
+		m.updatedAt = updatedAt
+	}
+	return m, nil
+}
+
 // AdvanceVersion produces a new successor manifest version preserving append-only immutability.
 // Invariant: newVersion must strictly exceed current version (v_{n+1} > v_n).
 func (m *DocumentManifest) AdvanceVersion(newVersion int64, chunkCount, totalTokens int) (*DocumentManifest, error) {
+	if m.status == ManifestStatusFinalized {
+		return nil, ErrManifestAlreadyFinalized
+	}
+
 	if newVersion <= m.version {
 		return nil, fmt.Errorf("%w: candidate version %d <= current version %d",
 			ErrVersionRegression, newVersion, m.version)

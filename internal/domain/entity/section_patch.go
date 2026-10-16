@@ -170,6 +170,9 @@ func (p *SectionPatch) Quarantine(upstreamDetails ...string) error {
 
 // Supersede transitions an ACTIVE or QUARANTINED patch to SUPERSEDED when replaced.
 func (p *SectionPatch) Supersede() error {
+	if p.status == PatchStatusSuperseded {
+		return fmt.Errorf("%w: cannot supersede already superseded patch %s", ErrInvalidPatchStatusTransition, p.patchID)
+	}
 	p.status = PatchStatusSuperseded
 	p.updatedAt = time.Now().UTC()
 	return nil

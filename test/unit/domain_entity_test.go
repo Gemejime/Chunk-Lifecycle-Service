@@ -165,6 +165,30 @@ func TestDocumentManifest_VersionMonotonicity(t *testing.T) {
 	if err := advanced.Finalize(); !errors.Is(err, entity.ErrManifestAlreadyFinalized) {
 		t.Fatalf("Expected ErrManifestAlreadyFinalized on duplicate finalize, got %v", err)
 	}
+
+	// Advancing a finalized manifest fails
+	if _, err := advanced.AdvanceVersion(3, 12, 3000); !errors.Is(err, entity.ErrManifestAlreadyFinalized) {
+		t.Fatalf("Expected ErrManifestAlreadyFinalized when advancing finalized manifest, got %v", err)
+	}
+
+	// Reject invalid manifest status
+	if _, err := entity.NewDocumentManifest(documentID, tenantID, 1, 10, 2500, "BOGUS_STATUS", time.Now()); err == nil {
+		t.Fatal("Expected error creating manifest with invalid status, got nil")
+	}
+
+	// ReconstructDocumentManifest preserves updatedAt
+	fixedCreated := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Millisecond)
+	fixedUpdated := time.Now().UTC().Truncate(time.Millisecond)
+	reconstructed, err := entity.ReconstructDocumentManifest(documentID, tenantID, 1, 10, 2500, entity.ManifestStatusActive, fixedCreated, fixedUpdated)
+	if err != nil {
+		t.Fatalf("Expected ReconstructDocumentManifest to succeed, got %v", err)
+	}
+	if !reconstructed.CreatedAt().Equal(fixedCreated) {
+		t.Fatalf("Expected createdAt %v, got %v", fixedCreated, reconstructed.CreatedAt())
+	}
+	if !reconstructed.UpdatedAt().Equal(fixedUpdated) {
+		t.Fatalf("Expected updatedAt %v, got %v", fixedUpdated, reconstructed.UpdatedAt())
+	}
 }
 
 func TestSectionPatch_StateMachine(t *testing.T) {
@@ -207,6 +231,15 @@ func TestSectionPatch_StateMachine(t *testing.T) {
 	}
 	if patch.Status() != entity.PatchStatusSuperseded {
 		t.Fatalf("Expected status %s, got %s", entity.PatchStatusSuperseded, patch.Status())
+	}
+
+	// Duplicate supersede transition on already superseded patch fails without altering updatedAt
+	prevUpdated := patch.UpdatedAt()
+	if err := patch.Supersede(); !errors.Is(err, entity.ErrInvalidPatchStatusTransition) {
+		t.Fatalf("Expected ErrInvalidPatchStatusTransition on duplicate supersede, got %v", err)
+	}
+	if !patch.UpdatedAt().Equal(prevUpdated) {
+		t.Fatalf("Expected updatedAt to remain unchanged on rejected supersede transition")
 	}
 
 	// Illegal quarantine transition on superseded patch

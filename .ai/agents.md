@@ -24,7 +24,7 @@ The **rag-chunk-lifecycle-service** is a stateless, high-throughput gRPC and RES
 
 ### Invariant 1: Mandatory Doc API Synchronization
 > **The API documentation must ALWAYS be updated no matter how little the created or modified code is.**
-> Any modification or creation of externally exposed gRPC methods, Protobuf v3 messages, HTTP endpoints, query parameters, payload schemas, or error responses MUST be immediately accompanied by updates to `api/proto/v1/` and `api/openapi/openapi.yaml`. Internal repository and domain port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules. Zero documentation drift is permitted.
+> Any modification or creation of HTTP endpoints, query parameters, payload schemas, or error responses MUST be accompanied by updates to `api/openapi/openapi.yaml`, and externally exposed gRPC methods or Protobuf v3 messages by updates to `api/proto/v1/` comments in the exact same changeset (requiring both only when both surfaces change). Internal repository and domain port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules. Zero documentation drift is permitted.
 
 ### Invariant 2: Strictly Secured Logging
 > **All emitted logs must adhere to Secured Logging principles.**

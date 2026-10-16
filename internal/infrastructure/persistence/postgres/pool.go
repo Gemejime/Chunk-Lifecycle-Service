@@ -87,8 +87,13 @@ func NewConnectionPool(ctx context.Context, cfg PoolConfig) (*pgxpool.Pool, erro
 		return nil, fmt.Errorf("failed to initialize postgres connection pool: %w", err)
 	}
 
+	healthTimeout := cfg.HealthTimeout
+	if healthTimeout <= 0 {
+		healthTimeout = 3 * time.Second
+	}
+
 	// Verify connectivity with health timeout
-	pingCtx, cancel := context.WithTimeout(ctx, cfg.HealthTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
 
 	if err := pool.Ping(pingCtx); err != nil {

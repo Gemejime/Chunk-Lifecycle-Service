@@ -29,7 +29,7 @@ Establish the production-grade Go microservice foundation for `rag-chunk-lifecyc
    - Domain Repository Port Interfaces (`internal/domain/repository/`): `ManifestRepository`, `ChunkRepository`, `PatchRepository`, `OutboxRepository`.
 4. **Relational Storage & Staging (Infrastructure)**:
    - PostgreSQL 16 schema migrations (`internal/infrastructure/persistence/migrations/000001_initial_schema.up.sql` and `.down.sql`) defining:
-     - `unlogged_chunk_staging`: High-velocity buffer table partitioned by `batch_id UUID NOT NULL` with `created_at TIMESTAMPTZ` for crash resilience.
+     - `unlogged_chunk_staging`: High-velocity buffer table partitioned by `batch_id UUID NOT NULL` with `created_at TIMESTAMPTZ` for stale-batch cleanup.
      - `document_manifests`: Monotonic integer versions per `(tenant_id, document_id)`.
      - `chunk_nodes`: Immutable content-addressed chunk storage indexed on `(tenant_id, chunk_id)` with lowercase 64-char hex IDs.
      - `manifest_chunk_bindings`: Relational junction table `(tenant_id, document_id, manifest_version, chunk_id, ordinal_position)` supporting content-addressed deduplication across document versions.
@@ -147,7 +147,7 @@ rag-chunk-lifecycle-service/
      - RPC `GetParentContainer(GetParentContainerRequest) returns (GetParentContainerResponse)`
      - RPC `ReconcileCDCUpdate(ReconcileCDCRequest) returns (ReconcileCDCResponse)`
 2. **OpenAPI 3.0.3 (`api/openapi/openapi.yaml`)**:
-   - Ingestion: `POST /v1/tenants/{tenant_id}/documents/{document_id}/chunks:batch` (`202 Accepted`, `400 Bad Request`, `409 Conflict`, `429 Too Many Requests`).
+   - Ingestion: `POST /v1/tenants/{tenant_id}/documents/{document_id}/chunks:batch` (`202 Accepted`, `400 Bad Request`, `409 Conflict`, `429 Too Many Requests`, `500 Internal Server Error`).
    - Quarantine Review:
      - `GET /v1/conflicts/quarantine` (list quarantined patches with cursor pagination).
      - `GET /v1/conflicts/{id}` (retrieve patch vs CDC upstream side-by-side diff).

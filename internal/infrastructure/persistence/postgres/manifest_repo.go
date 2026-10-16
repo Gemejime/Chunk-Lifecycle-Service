@@ -48,7 +48,7 @@ func (r *PostgresManifestRepository) GetByVersion(
 	version int64,
 ) (*entity.DocumentManifest, error) {
 	query := `
-		SELECT document_id, tenant_id, version, chunk_count, total_tokens, status, created_at
+		SELECT document_id, tenant_id, version, chunk_count, total_tokens, status, created_at, updated_at
 		FROM document_manifests
 		WHERE tenant_id = $1 AND document_id = $2 AND version = $3;
 	`
@@ -60,10 +60,11 @@ func (r *PostgresManifestRepository) GetByVersion(
 		totalTokens int
 		status      string
 		createdAt   time.Time
+		updatedAt   time.Time
 	)
 
 	err := r.pool.QueryRow(ctx, query, tenantID, documentID, version).Scan(
-		&docID, &tenID, &ver, &chunkCount, &totalTokens, &status, &createdAt,
+		&docID, &tenID, &ver, &chunkCount, &totalTokens, &status, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -72,22 +73,39 @@ func (r *PostgresManifestRepository) GetByVersion(
 		return nil, fmt.Errorf("failed to query manifest snapshot: %w", err)
 	}
 
-	return entity.NewDocumentManifest(docID, tenID, ver, chunkCount, totalTokens, status, createdAt)
+	return entity.ReconstructDocumentManifest(docID, tenID, ver, chunkCount, totalTokens, status, createdAt, updatedAt)
 }
 
 // Save persists a new or advanced document manifest record.
 func (r *PostgresManifestRepository) Save(ctx context.Context, manifest *entity.DocumentManifest) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var latest int64
+	err = tx.QueryRow(ctx, `
+		SELECT COALESCE(
+			(SELECT version FROM document_manifests WHERE tenant_id = $1 AND document_id = $2 ORDER BY version DESC LIMIT 1 FOR UPDATE),
+			0
+		);
+	`, manifest.TenantID(), manifest.DocumentID()).Scan(&latest)
+	if err != nil {
+		return fmt.Errorf("failed to check latest manifest version: %w", err)
+	}
+
+	if manifest.Version() <= latest {
+		return fmt.Errorf("%w: version %d <= latest version %d", entity.ErrVersionRegression, manifest.Version(), latest)
+	}
+
 	query := `
 		INSERT INTO document_manifests (
 			tenant_id, document_id, version, chunk_count, total_tokens, status, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (tenant_id, document_id, version) DO UPDATE SET
-			chunk_count = EXCLUDED.chunk_count,
-			total_tokens = EXCLUDED.total_tokens,
-			status = EXCLUDED.status,
-			updated_at = EXCLUDED.updated_at;
+		ON CONFLICT (tenant_id, document_id, version) DO NOTHING;
 	`
-	_, err := r.pool.Exec(
+	tag, err := tx.Exec(
 		ctx, query,
 		manifest.TenantID(),
 		manifest.DocumentID(),
@@ -100,6 +118,12 @@ func (r *PostgresManifestRepository) Save(ctx context.Context, manifest *entity.
 	)
 	if err != nil {
 		return fmt.Errorf("failed to persist document manifest: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: version %d already exists", entity.ErrVersionRegression, manifest.Version())
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit manifest transaction: %w", err)
 	}
 	return nil
 }

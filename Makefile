@@ -1,4 +1,4 @@
-.PHONY: all proto lint test verify vulncheck fmt clean docker-build helm-lint test-performance
+.PHONY: all proto lint test verify vulncheck fmt docker-build helm-lint test-performance
 
 all: verify
 

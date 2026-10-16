@@ -27,9 +27,8 @@ Before generating plans, designing components, or writing code, you **MUST** rea
 
 ### A. Mandatory Doc API Synchronization
 > **CRITICAL RULE**: The "doc api" must ALWAYS be updated no matter how little the created or modified code is. See [.ai/doc-api.md](.ai/doc-api.md) for complete standards.
-- Any change to externally exposed gRPC service definitions (`api/proto/v1/chunk_service.proto`, `types.proto`), HTTP handlers, or REST routes **MUST** be mirrored immediately in:
-  1. `api/openapi/openapi.yaml` (paths, parameters, request bodies, response models, status codes).
-  2. Protobuf schema documentation comments.
+- Any change to HTTP handlers or REST routes **MUST** be mirrored immediately in `api/openapi/openapi.yaml` (paths, parameters, request bodies, response models, status codes).
+- Any change to externally exposed gRPC service definitions (`api/proto/v1/chunk_service.proto`, `types.proto`) **MUST** be mirrored immediately in Protobuf schema documentation comments. Both must be updated only when both surfaces change.
 - Internal repository and domain port contracts must be documented directly at their Go interfaces.
 - Code changes without corresponding API documentation updates will be rejected.
 

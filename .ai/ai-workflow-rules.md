@@ -31,7 +31,7 @@ Never invent behaviors, schemas, or RPC signatures outside these specifications 
 1. **Scope Boundary**: Never implement out-of-scope features (e.g. 3-way AST token diffing, full text OCR, model weights hosting).
 2. **Doc API Mandate**:
    > **The "doc api" must ALWAYS be updated no matter how little the created or modified code is.**
-   > Every addition or alteration to externally exposed gRPC RPCs, Protobuf messages, HTTP routes, or OpenAPI endpoints must be documented in `api/openapi/openapi.yaml` and Protobuf comments in the exact same commit. Internal repository port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules.
+   > Every addition or alteration to HTTP routes or OpenAPI endpoints must be documented in `api/openapi/openapi.yaml`, and externally exposed gRPC RPCs or Protobuf messages in Protobuf comments, in the exact same commit (requiring both only when both surfaces change). Internal repository port contracts must be documented directly at their Go interfaces. See [.ai/doc-api.md](doc-api.md) for complete specifications and enforcement rules.
 3. **Secured Logging Mandate**:
    > **All logging must be strictly secured.**
    > Output structured JSON with `trace_id` and `tenant_id`. Redact all authorization tokens, credentials, and raw document chunk contents (log only safe hashes, chunk IDs, and token metrics).
