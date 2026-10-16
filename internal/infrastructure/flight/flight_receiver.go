@@ -25,6 +25,8 @@ var (
 	ErrEmptyBatch = errors.New("flight record batch is empty")
 	// ErrBackpressureSaturated indicates the flight receiver is currently at concurrency limit.
 	ErrBackpressureSaturated = errors.New("flight receiver backpressure capacity saturated")
+	// ErrMixedIdentityBatch indicates a batch contains differing tenant or document IDs across rows.
+	ErrMixedIdentityBatch = errors.New("flight record batch contains mixed tenant or document identities")
 )
 
 // ColumnarRecordBatch represents a columnar batch of document chunks adhering to Apache Arrow Flight schema.
@@ -198,8 +200,17 @@ func (r *FlightReceiver) IngestRecordBatch(
 	}
 
 	batchID := uuid.New().String()
-	tenantID := batch.TenantIDs[0]
-	documentID := batch.DocumentIDs[0]
+	tenantID := strings.TrimSpace(batch.TenantIDs[0])
+	documentID := strings.TrimSpace(batch.DocumentIDs[0])
+
+	for i := 1; i < batch.NumRows(); i++ {
+		rowTenant := strings.TrimSpace(batch.TenantIDs[i])
+		rowDoc := strings.TrimSpace(batch.DocumentIDs[i])
+		if rowTenant != tenantID || rowDoc != documentID {
+			return nil, fmt.Errorf("%w: row %d (tenant=%q, doc=%q) does not match row 0 (tenant=%q, doc=%q)",
+				ErrMixedIdentityBatch, i, rowTenant, rowDoc, tenantID, documentID)
+		}
+	}
 
 	cmd := command.IngestChunkBatchCommand{
 		TenantID:        tenantID,
@@ -247,13 +258,22 @@ func (r *FlightReceiver) DecodeIPCStreamMessage(data []byte) (*ColumnarRecordBat
 	if rowCount <= 0 {
 		return nil, ErrEmptyBatch
 	}
+	if int64(rowCount) > int64(reader.Len()) {
+		return nil, fmt.Errorf("row count %d exceeds available payload size %d", rowCount, reader.Len())
+	}
 
 	readStringSlice := func() ([]string, error) {
+		if int64(rowCount) > int64(reader.Len()) {
+			return nil, fmt.Errorf("row count %d exceeds available payload bytes %d", rowCount, reader.Len())
+		}
 		res := make([]string, rowCount)
 		for i := 0; i < int(rowCount); i++ {
 			var length int32
 			if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
 				return nil, err
+			}
+			if length < 0 || int64(length) > int64(reader.Len()) {
+				return nil, fmt.Errorf("invalid string length %d exceeds remaining payload bytes %d", length, reader.Len())
 			}
 			buf := make([]byte, length)
 			if _, err := io.ReadFull(reader, buf); err != nil {

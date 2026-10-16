@@ -73,7 +73,7 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
     - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler`, `--task=warm-parent-cache`, and `--task=healthcheck`.
   - Built comprehensive unit test suites (`reconcile_cdc_update_test.go`, `resolve_quarantine_test.go`, `grpc_chunk_handler_test.go`, `http_quarantine_handler_test.go`, `patch_repo_test.go`, `section_reconciler_test.go`) achieving 100% pass rate across 38 tests.
 - [x] **Phase 4 Implementation Complete**:
-  - Zero-Trust Distroless Dockerfile (`deployments/docker/Dockerfile`) & `.dockerignore`: Multi-stage build targeting `gcr.io/distroless/static:nonroot` with UID 65532:65532, zero shell, read-only root filesystems, packaging statically linked `chunk-server` and `reconciliation-worker`.
+  - Zero-Trust Distroless Dockerfile (`deployments/docker/Dockerfile`) & `.dockerignore`: Multi-stage build targeting `gcr.io/distroless/static:nonroot` with UID 65532:65532 and zero shell (with read-only root filesystems enforced via Helm container security contexts through `.Values.securityContext`), packaging statically linked `chunk-server` and `reconciliation-worker`.
   - Production Helm Chart Architecture (`deployments/helm/`):
     - `Chart.yaml`, `values.yaml`, `_helpers.tpl`, `configmap.yaml`, `secret.yaml`, `serviceaccount.yaml`.
     - Decoupled deployments: `deployment-chunk-server.yaml` and `deployment-reconciliation-worker.yaml`.

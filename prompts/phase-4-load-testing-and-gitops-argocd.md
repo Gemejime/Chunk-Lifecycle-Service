@@ -63,8 +63,8 @@ Package `rag-chunk-lifecycle-service` into a modular, production-ready Helm char
 2. `application-reconciliation-worker.yaml`: ArgoCD Application managing background reconciliation worker.
 3. `applicationset.yaml`: Multi-cluster / multi-environment ApplicationSet generating configurations across `dev`, `staging`, and `production`.
 4. `analysistemplate.yaml`: Argo Rollouts `AnalysisTemplate` defining Prometheus metric provider and PromQL queries:
-   - Latency verification: `histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket[5m])) by (le)) <= 0.12`
-   - Quarantine budget verification: `sum(rate(chunk_section_stale_quarantine_total[10m])) / sum(rate(chunk_ingestion_chunks_per_second[10m])) <= 0.02`
+   - Latency verification: `histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket{app_kubernetes_io_name="rag-chunk-lifecycle-service"}[5m])) by (le)) <= 0.12`
+   - Quarantine budget verification: `sum(rate(chunk_section_stale_quarantine_total[10m])) / clamp_min(sum(rate(chunk_ingestion_chunks_per_second[10m])), 1) <= 0.02`
 5. `rollout-chunk-server.yaml`: Argo Rollouts Canary strategy definition:
    - Traffic progression steps: 10% $\to$ 25% $\to$ 100%.
    - References `analysistemplate.yaml`, `service-chunk-server-stable`, and `service-chunk-server-canary`.

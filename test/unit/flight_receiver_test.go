@@ -195,3 +195,69 @@ func TestFlightReceiver_IngestRecordBatch_Success(t *testing.T) {
 		t.Errorf("expected 1 chunk processed, got %d", res.ChunksProcessed)
 	}
 }
+
+func TestFlightReceiver_IngestRecordBatch_MixedIdentityRejection(t *testing.T) {
+	ingestHandler := command.NewIngestChunkBatchHandler(nil, nil)
+	receiver := flight.NewFlightReceiver(ingestHandler)
+
+	// Mismatched tenant
+	mismatchedTenantBatch := &flight.ColumnarRecordBatch{
+		TenantIDs:         []string{"tenant-1", "tenant-2"},
+		DocumentIDs:       []string{"doc-1", "doc-1"},
+		NormalizedContent: []string{"Sample content for flight execution test 1.", "Sample content for flight execution test 2."},
+		StructuralPaths:   []string{"root/section_1", "root/section_2"},
+		TokenCounts:       []int32{200, 210},
+		SequenceIndices:   []int64{1, 2},
+	}
+
+	_, err := receiver.IngestRecordBatch(context.Background(), mismatchedTenantBatch, 1)
+	if err == nil || !errors.Is(err, flight.ErrMixedIdentityBatch) {
+		t.Fatalf("expected ErrMixedIdentityBatch for mixed tenants, got %v", err)
+	}
+
+	// Mismatched document
+	mismatchedDocBatch := &flight.ColumnarRecordBatch{
+		TenantIDs:         []string{"tenant-1", "tenant-1"},
+		DocumentIDs:       []string{"doc-1", "doc-2"},
+		NormalizedContent: []string{"Sample content for flight execution test 1.", "Sample content for flight execution test 2."},
+		StructuralPaths:   []string{"root/section_1", "root/section_2"},
+		TokenCounts:       []int32{200, 210},
+		SequenceIndices:   []int64{1, 2},
+	}
+
+	_, err = receiver.IngestRecordBatch(context.Background(), mismatchedDocBatch, 1)
+	if err == nil || !errors.Is(err, flight.ErrMixedIdentityBatch) {
+		t.Fatalf("expected ErrMixedIdentityBatch for mixed document IDs, got %v", err)
+	}
+}
+
+func TestFlightReceiver_DecodeIPCStreamMessage_BoundsValidation(t *testing.T) {
+	receiver := flight.NewFlightReceiver(nil)
+
+	// 1. rowCount exceeds available payload size
+	var bufExcessiveRows bytes.Buffer
+	_ = binary.Write(&bufExcessiveRows, binary.BigEndian, int32(500000))
+	bufExcessiveRows.WriteString("tiny")
+	_, err := receiver.DecodeIPCStreamMessage(bufExcessiveRows.Bytes())
+	if err == nil {
+		t.Fatalf("expected error for rowCount exceeding payload size, got nil")
+	}
+
+	// 2. Negative string length
+	var bufNegLen bytes.Buffer
+	_ = binary.Write(&bufNegLen, binary.BigEndian, int32(1))
+	_ = binary.Write(&bufNegLen, binary.BigEndian, int32(-5)) // negative length
+	_, err = receiver.DecodeIPCStreamMessage(bufNegLen.Bytes())
+	if err == nil {
+		t.Fatalf("expected error for negative string length, got nil")
+	}
+
+	// 3. String length exceeding available reader bytes
+	var bufExceedingLen bytes.Buffer
+	_ = binary.Write(&bufExceedingLen, binary.BigEndian, int32(1))
+	_ = binary.Write(&bufExceedingLen, binary.BigEndian, int32(999999)) // 1MB string in 8-byte payload
+	_, err = receiver.DecodeIPCStreamMessage(bufExceedingLen.Bytes())
+	if err == nil {
+		t.Fatalf("expected error for string length exceeding reader length, got nil")
+	}
+}

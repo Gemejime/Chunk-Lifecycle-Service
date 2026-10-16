@@ -33,7 +33,7 @@ spec:
             team: platform-core
           annotations:
             summary: "Parent context compilation P99 latency exceeded 200ms"
-            description: "Parent container compilation P99 latency is {{ $value }}s (>200ms ceiling; SLO is <=120ms) for more than 5 minutes."
+            description: "Parent container compilation P99 latency is {{ "{{" }} $value {{ "}}" }}s (>200ms ceiling; SLO is <=120ms) for more than 5 minutes."
             runbook_url: "https://wiki.gemejime.internal/runbooks/compilation-latency"
 
         # Alert 3: High Memory Pressure
@@ -45,6 +45,6 @@ spec:
             team: platform-core
           annotations:
             summary: "Chunk Server pod memory exceeds 80% of 1.5GiB container limit"
-            description: "Pod {{ $labels.pod }} memory working set is {{ $value }} bytes (>80% of 1.5GiB limit) for >2m. Risk of OOM kill."
+            description: "Pod {{ "{{" }} $labels.pod {{ "}}" }} memory working set is {{ "{{" }} $value {{ "}}" }} bytes (>80% of 1.5GiB limit) for >2m. Risk of OOM kill."
             runbook_url: "https://wiki.gemejime.internal/runbooks/memory-saturation"
 {{- end }}
