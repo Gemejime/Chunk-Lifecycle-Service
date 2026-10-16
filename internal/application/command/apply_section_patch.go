@@ -120,12 +120,36 @@ func (h *ApplySectionPatchHandler) Execute(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// 3. Optimistic Concurrency Control: Validate base_content_hash
-	if err := h.validateBaseContentHash(ctx, tx, tenantID, documentID, sectionKey, baseHash); err != nil {
-		return nil, err
+	// Document-level serialization lock held until commit/rollback to serialize patches for the same document
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2));`, tenantID, documentID); err != nil {
+		return nil, fmt.Errorf("failed acquiring document lock: %w", err)
 	}
 
-	// 4. Resolve current manifest version and lock manifest row
+	// Idempotency check: if ClientMutationID is supplied and already recorded, return stored result
+	var clientPatchID string
+	if cmd.ClientMutationID != "" {
+		if parsed, pErr := uuid.Parse(cmd.ClientMutationID); pErr == nil {
+			clientPatchID = parsed.String()
+			existingResult, exists, eErr := h.checkExistingPatch(ctx, tx, tenantID, documentID, clientPatchID)
+			if eErr != nil {
+				return nil, fmt.Errorf("failed checking existing patch idempotency: %w", eErr)
+			}
+			if exists {
+				logger.InfoContext(ctx, "idempotent patch replay detected",
+					slog.String("patch_id", clientPatchID),
+					slog.Int64("manifest_version", existingResult.ManifestVersion),
+				)
+				return existingResult, nil
+			}
+		}
+	}
+
+	patchID := uuid.New().String()
+	if clientPatchID != "" {
+		patchID = clientPatchID
+	}
+
+	// 3. Resolve current manifest version
 	var currentVersion int64
 	var totalTokens int
 	err = tx.QueryRow(ctx, `
@@ -135,6 +159,11 @@ func (h *ApplySectionPatchHandler) Execute(
 	`, tenantID, documentID).Scan(&currentVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed querying current manifest version: %w", err)
+	}
+
+	// 4. Optimistic Concurrency Control: Validate base_content_hash
+	if err := h.validateBaseContentHash(ctx, tx, tenantID, documentID, currentVersion, sectionKey, baseHash); err != nil {
+		return nil, err
 	}
 
 	nextVersion := currentVersion + 1
@@ -159,18 +188,15 @@ func (h *ApplySectionPatchHandler) Execute(
 	}
 
 	var recompiledParentIDs []string
+	chunkToParent := make(map[string]string)
 	for _, p := range recompiledParents {
 		recompiledParentIDs = append(recompiledParentIDs, p.ParentID())
-	}
-
-	// 7. Persist SectionPatch
-	patchID := uuid.New().String()
-	if cmd.ClientMutationID != "" {
-		if parsed, pErr := uuid.Parse(cmd.ClientMutationID); pErr == nil {
-			patchID = parsed.String()
+		for _, childID := range p.ChildChunkIDs() {
+			chunkToParent[childID] = p.ParentID()
 		}
 	}
 
+	// 7. Persist SectionPatch
 	// Supersede existing active patch for this section if present
 	_, err = tx.Exec(ctx, `
 		UPDATE section_patches
@@ -192,16 +218,32 @@ func (h *ApplySectionPatchHandler) Execute(
 		return nil, fmt.Errorf("failed inserting active section patch: %w", err)
 	}
 
-	// 8. Insert new child chunks into chunk_nodes (ON CONFLICT DO NOTHING)
+	// 8. Bind each chunk to its version N+1 parent before chunk_nodes persistence
+	// Re-bind unchanged chunks to their recompiled parent in chunk_nodes
+	for _, ch := range existingChunks {
+		if pID, ok := chunkToParent[ch.ChunkID()]; ok && pID != "" {
+			_, err = tx.Exec(ctx, `
+				UPDATE chunk_nodes
+				SET parent_id = $3
+				WHERE tenant_id = $1 AND chunk_id = $2;
+			`, tenantID, ch.ChunkID(), pID)
+			if err != nil {
+				return nil, fmt.Errorf("failed updating parent_id for chunk %s: %w", ch.ChunkID(), err)
+			}
+		}
+	}
+
+	// Insert new child chunks into chunk_nodes with recompiled parent_id
 	for _, ch := range newChildChunks {
 		metaJSON, _ := json.Marshal(ch.Metadata())
+		pID := chunkToParent[ch.ChunkID()]
 		_, err = tx.Exec(ctx, `
 			INSERT INTO chunk_nodes (
 				tenant_id, chunk_id, parent_id, content, token_count,
 				structural_path, byte_offset_start, byte_offset_end, metadata, created_at
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-			ON CONFLICT (tenant_id, chunk_id) DO NOTHING;
-		`, tenantID, ch.ChunkID(), ch.ParentID(), ch.Content(), ch.TokenCount(),
+			ON CONFLICT (tenant_id, chunk_id) DO UPDATE SET parent_id = EXCLUDED.parent_id;
+		`, tenantID, ch.ChunkID(), pID, ch.Content(), ch.TokenCount(),
 			ch.StructuralPath(), ch.ByteOffsetStart(), ch.ByteOffsetEnd(), metaJSON)
 		if err != nil {
 			return nil, fmt.Errorf("failed persisting child chunk %s: %w", ch.ChunkID(), err)
@@ -299,11 +341,90 @@ func (h *ApplySectionPatchHandler) Execute(
 	}, nil
 }
 
+// checkExistingPatch checks whether an active or historical patch with patchID exists for idempotency.
+func (h *ApplySectionPatchHandler) checkExistingPatch(
+	ctx context.Context,
+	tx pgx.Tx,
+	tenantID, documentID, patchID string,
+) (*ApplySectionPatchResult, bool, error) {
+	var status string
+	err := tx.QueryRow(ctx, `
+		SELECT status FROM section_patches
+		WHERE tenant_id = $1 AND patch_id = $2;
+	`, tenantID, patchID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Retrieve stored outbox event payload for this patch
+	var payloadJSON []byte
+	err = tx.QueryRow(ctx, `
+		SELECT payload_json FROM outbox_events
+		WHERE tenant_id = $1 AND aggregate_type = 'SectionPatch' AND aggregate_id = $2
+		ORDER BY timestamp_utc DESC LIMIT 1;
+	`, tenantID, patchID).Scan(&payloadJSON)
+
+	var manifestVersion int64
+	var chunkIDs []string
+	if err == nil && len(payloadJSON) > 0 {
+		var p struct {
+			ManifestVersion int64    `json:"manifest_version"`
+			ChunkIDs        []string `json:"chunk_ids"`
+		}
+		if jsonErr := json.Unmarshal(payloadJSON, &p); jsonErr == nil {
+			manifestVersion = p.ManifestVersion
+			chunkIDs = p.ChunkIDs
+		}
+	}
+
+	var parentIDs []string
+	if manifestVersion > 0 {
+		rows, qErr := tx.Query(ctx, `
+			SELECT parent_id FROM parent_containers
+			WHERE tenant_id = $1 AND document_id = $2 AND manifest_version = $3
+			ORDER BY parent_id ASC;
+		`, tenantID, documentID, manifestVersion)
+		if qErr == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var pid string
+				if sErr := rows.Scan(&pid); sErr == nil {
+					parentIDs = append(parentIDs, pid)
+				}
+			}
+		}
+	}
+
+	return &ApplySectionPatchResult{
+		PatchID:                 patchID,
+		ManifestVersion:         manifestVersion,
+		Status:                  status,
+		RecompiledParentIDs:     parentIDs,
+		RevectorizationChunkIDs: chunkIDs,
+	}, true, nil
+}
+
+// ValidateBaseContentHash performs optimistic concurrency validation against an active patch or current manifest chunks.
+func (h *ApplySectionPatchHandler) ValidateBaseContentHash(
+	ctx context.Context,
+	tx pgx.Tx,
+	tenantID, documentID string,
+	manifestVersion int64,
+	sectionKey, expectedHash string,
+) error {
+	return h.validateBaseContentHash(ctx, tx, tenantID, documentID, manifestVersion, sectionKey, expectedHash)
+}
+
 // validateBaseContentHash performs optimistic concurrency validation.
 func (h *ApplySectionPatchHandler) validateBaseContentHash(
 	ctx context.Context,
 	tx pgx.Tx,
-	tenantID, documentID, sectionKey, expectedHash string,
+	tenantID, documentID string,
+	manifestVersion int64,
+	sectionKey, expectedHash string,
 ) error {
 	// Check if active patch exists for this section
 	var activePatchedContent string
@@ -329,12 +450,26 @@ func (h *ApplySectionPatchHandler) validateBaseContentHash(
 		return fmt.Errorf("failed checking active section patches: %w", err)
 	}
 
-	// If no active patch, check chunk_nodes for this section
+	if manifestVersion == 0 {
+		return entity.ErrStaleBaseHash
+	}
+
+	// Escape LIKE special characters in sectionKey
+	escapedSectionKey := strings.ReplaceAll(sectionKey, `\`, `\\`)
+	escapedSectionKey = strings.ReplaceAll(escapedSectionKey, `%`, `\%`)
+	escapedSectionKey = strings.ReplaceAll(escapedSectionKey, `_`, `\_`)
+
+	// Fallback: join chunk_nodes with manifest_chunk_bindings for current version and document_id
 	rows, err := tx.Query(ctx, `
-		SELECT content FROM chunk_nodes
-		WHERE tenant_id = $1 AND structural_path LIKE $2 || '%'
-		ORDER BY byte_offset_start ASC;
-	`, tenantID, sectionKey)
+		SELECT c.content
+		FROM manifest_chunk_bindings b
+		JOIN chunk_nodes c ON b.tenant_id = c.tenant_id AND b.chunk_id = c.chunk_id
+		WHERE b.tenant_id = $1
+		  AND b.document_id = $2
+		  AND b.manifest_version = $3
+		  AND (c.structural_path = $4 OR c.structural_path LIKE $5 || '/%' ESCAPE '\')
+		ORDER BY b.ordinal_position ASC;
+	`, tenantID, documentID, manifestVersion, sectionKey, escapedSectionKey)
 	if err != nil {
 		return fmt.Errorf("failed querying chunk nodes for section hash validation: %w", err)
 	}
@@ -343,21 +478,27 @@ func (h *ApplySectionPatchHandler) validateBaseContentHash(
 	var contents []string
 	for rows.Next() {
 		var c string
-		if err := rows.Scan(&c); err == nil {
-			contents = append(contents, c)
+		if err := rows.Scan(&c); err != nil {
+			return fmt.Errorf("failed scanning chunk node content: %w", err)
 		}
+		contents = append(contents, c)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed reading chunk node rows: %w", err)
 	}
 
-	if len(contents) > 0 {
-		combined := strings.Join(contents, "\n\n")
-		normalized := h.hasher.NormalizeContent(combined)
-		hasher := sha256.New()
-		hasher.Write([]byte(normalized))
-		sectionHash := hex.EncodeToString(hasher.Sum(nil))
+	if len(contents) == 0 {
+		return entity.ErrStaleBaseHash
+	}
 
-		if sectionHash != expectedHash {
-			return entity.ErrStaleBaseHash
-		}
+	combined := strings.Join(contents, "\n\n")
+	normalized := h.hasher.NormalizeContent(combined)
+	hasher := sha256.New()
+	hasher.Write([]byte(normalized))
+	sectionHash := hex.EncodeToString(hasher.Sum(nil))
+
+	if sectionHash != expectedHash {
+		return entity.ErrStaleBaseHash
 	}
 
 	return nil

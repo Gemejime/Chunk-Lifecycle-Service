@@ -79,16 +79,20 @@ func (h *GetParentContainerHandler) Execute(
 
 	// Cache miss or latest version lookup: Coalesce concurrent queries via singleflight
 	sfKey := fmt.Sprintf("%s:%s:%d", tenantID, parentID, q.ManifestVersion)
-	val, err, _ := h.sf.Do(sfKey, func() (any, error) {
+	ch := h.sf.DoChan(sfKey, func() (any, error) {
+		// Use detached context with bounded timeout so shared work does not inherit first caller's cancellation
+		workCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+
 		// Double check cache under singleflight lock if version > 0
 		if q.ManifestVersion > 0 && h.cache != nil {
-			cached, cErr := h.cache.Get(ctx, tenantID, parentID, q.ManifestVersion)
+			cached, cErr := h.cache.Get(workCtx, tenantID, parentID, q.ManifestVersion)
 			if cErr == nil && cached != nil {
 				return cached, nil
 			}
 		}
 
-		logger.DebugContext(ctx, "querying relational storage for parent container",
+		logger.DebugContext(workCtx, "querying relational storage for parent container",
 			slog.Bool("cache_hit", false),
 		)
 
@@ -96,7 +100,7 @@ func (h *GetParentContainerHandler) Execute(
 			return nil, nil
 		}
 
-		container, rErr := h.repo.GetByID(ctx, tenantID, parentID, q.ManifestVersion)
+		container, rErr := h.repo.GetByID(workCtx, tenantID, parentID, q.ManifestVersion)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed retrieving parent container from repository: %w", rErr)
 		}
@@ -106,8 +110,8 @@ func (h *GetParentContainerHandler) Execute(
 
 		// Backfill cache
 		if h.cache != nil {
-			if bErr := h.cache.Set(ctx, container, 24*time.Hour); bErr != nil {
-				logger.WarnContext(ctx, "failed backfilling parent container to cache",
+			if bErr := h.cache.Set(workCtx, container, 24*time.Hour); bErr != nil {
+				logger.WarnContext(workCtx, "failed backfilling parent container to cache",
 					slog.String("error", bErr.Error()),
 				)
 			}
@@ -116,18 +120,20 @@ func (h *GetParentContainerHandler) Execute(
 		return container, nil
 	})
 
-	if err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		if res.Val == nil {
+			return nil, nil
+		}
+		container, ok := res.Val.(*entity.ParentContainer)
+		if !ok {
+			return nil, fmt.Errorf("unexpected type returned from singleflight: %T", res.Val)
+		}
+		return container, nil
 	}
-
-	if val == nil {
-		return nil, nil
-	}
-
-	container, ok := val.(*entity.ParentContainer)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type returned from singleflight: %T", val)
-	}
-
-	return container, nil
 }

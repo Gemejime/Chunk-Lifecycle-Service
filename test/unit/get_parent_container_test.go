@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -191,5 +192,85 @@ func TestGetParentContainer_SingleflightCoalescing(t *testing.T) {
 	// Singleflight should coalesce 20 concurrent requests down to very few (typically 1 call)
 	if calls > 3 {
 		t.Errorf("expected singleflight to coalesce 20 requests to <= 3 repo calls, got %d", calls)
+	}
+}
+
+func TestGetParentContainer_SingleflightCallerCancellation(t *testing.T) {
+	s := miniredis.RunT(t)
+	client := redis.NewUniversalClient(&redis.UniversalOptions{Addrs: []string{s.Addr()}})
+	defer client.Close()
+
+	cache := cached.NewRedisParentCache(client)
+	tenantID := "tenant-sf-cancel"
+	parentID := "parent-cancel"
+	version := int64(1)
+
+	container, err := entity.NewParentContainer(
+		parentID, tenantID, "doc-cancel", version, "sec_cancel", "Fetched content", 950, []string{"c1"},
+	)
+	if err != nil {
+		t.Fatalf("failed creating entity: %v", err)
+	}
+
+	started := make(chan struct{})
+	repo := &mockParentRepo{
+		getByIDFunc: func(ctx context.Context, tID, pID string, ver int64) (*entity.ParentContainer, error) {
+			select {
+			case <-started:
+			default:
+				close(started)
+			}
+			time.Sleep(80 * time.Millisecond)
+			return container, nil
+		},
+	}
+
+	handler := query.NewGetParentContainerHandler(repo, cache)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx2 := context.Background()
+
+	var wg sync.WaitGroup
+	var res1, res2 *entity.ParentContainer
+	var err1, err2 error
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		res1, err1 = handler.Execute(ctx1, query.GetParentContainerQuery{
+			TenantID:        tenantID,
+			ParentID:        parentID,
+			ManifestVersion: version,
+		})
+	}()
+
+	// Wait until repo operation begins under singleflight
+	<-started
+	// Cancel first caller's context while operation is executing
+	cancel1()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = handler.Execute(ctx2, query.GetParentContainerQuery{
+			TenantID:        tenantID,
+			ParentID:        parentID,
+			ManifestVersion: version,
+		})
+	}()
+
+	wg.Wait()
+
+	if !errors.Is(err1, context.Canceled) {
+		t.Errorf("expected caller 1 to receive context.Canceled, got %v", err1)
+	}
+	if res1 != nil {
+		t.Errorf("expected caller 1 to receive nil result, got %v", res1)
+	}
+
+	if err2 != nil {
+		t.Fatalf("expected caller 2 to succeed despite caller 1 cancellation, got %v", err2)
+	}
+	if res2 == nil || res2.ParentID() != parentID {
+		t.Fatalf("expected caller 2 to receive valid parent container, got %v", res2)
 	}
 }
