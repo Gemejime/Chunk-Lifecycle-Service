@@ -519,33 +519,11 @@ func (h *ReapplyOverrideHandler) Execute(
 	}, nil
 }
 
-// Helpers shared for chunk slicing and loading unmodified chunks
-func (h *AcceptUpstreamCDCHandler) loadUnmodifiedChunks(
-	ctx context.Context,
-	tx pgx.Tx,
-	tenantID, documentID string,
-	manifestVersion int64,
-	modifiedSectionKey string,
-) ([]*entity.ChunkNode, error) {
-	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
-	return chunks, err
-}
-
+// Helpers shared for chunk slicing
 func (h *AcceptUpstreamCDCHandler) sliceContentIntoChunks(
 	tenantID, documentID, sectionKey, text string,
 ) ([]*entity.ChunkNode, error) {
 	return sliceTextIntoChunks(h.hasher, tenantID, sectionKey, text)
-}
-
-func (h *ReapplyOverrideHandler) loadUnmodifiedChunks(
-	ctx context.Context,
-	tx pgx.Tx,
-	tenantID, documentID string,
-	manifestVersion int64,
-	modifiedSectionKey string,
-) ([]*entity.ChunkNode, error) {
-	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
-	return chunks, err
 }
 
 func (h *ReapplyOverrideHandler) sliceContentIntoChunks(

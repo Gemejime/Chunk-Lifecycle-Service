@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/compiler"
@@ -351,17 +350,6 @@ func (h *ReconcileCDCUpdateHandler) Execute(
 		Message:            result.Message,
 		NewManifestVersion: nextVersion,
 	}, nil
-}
-
-func (h *ReconcileCDCUpdateHandler) loadUnmodifiedChunks(
-	ctx context.Context,
-	tx pgx.Tx,
-	tenantID, documentID string,
-	manifestVersion int64,
-	modifiedSectionKey string,
-) ([]*entity.ChunkNode, error) {
-	chunks, _, err := loadChunksExcludingSection(ctx, tx, tenantID, documentID, manifestVersion, modifiedSectionKey)
-	return chunks, err
 }
 
 func (h *ReconcileCDCUpdateHandler) sliceContentIntoChunks(

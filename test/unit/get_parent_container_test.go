@@ -43,7 +43,7 @@ func (m *mockParentRepo) GetByDocumentVersion(ctx context.Context, tenantID, doc
 func TestGetParentContainer_CacheHit(t *testing.T) {
 	s := miniredis.RunT(t)
 	client := redis.NewUniversalClient(&redis.UniversalOptions{Addrs: []string{s.Addr()}})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	repo := &mockParentRepo{}
@@ -87,7 +87,7 @@ func TestGetParentContainer_CacheHit(t *testing.T) {
 func TestGetParentContainer_CacheMissBackfill(t *testing.T) {
 	s := miniredis.RunT(t)
 	client := redis.NewUniversalClient(&redis.UniversalOptions{Addrs: []string{s.Addr()}})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	tenantID := "tenant-miss"
@@ -137,7 +137,7 @@ func TestGetParentContainer_CacheMissBackfill(t *testing.T) {
 func TestGetParentContainer_SingleflightCoalescing(t *testing.T) {
 	s := miniredis.RunT(t)
 	client := redis.NewUniversalClient(&redis.UniversalOptions{Addrs: []string{s.Addr()}})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	tenantID := "tenant-sf"
@@ -198,7 +198,7 @@ func TestGetParentContainer_SingleflightCoalescing(t *testing.T) {
 func TestGetParentContainer_SingleflightCallerCancellation(t *testing.T) {
 	s := miniredis.RunT(t)
 	client := redis.NewUniversalClient(&redis.UniversalOptions{Addrs: []string{s.Addr()}})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	tenantID := "tenant-sf-cancel"

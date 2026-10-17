@@ -30,7 +30,7 @@ func TestParentCache_HitMissAndExpiration(t *testing.T) {
 	client := redis.NewUniversalClient(&redis.UniversalOptions{
 		Addrs: []string{s.Addr()},
 	})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	ctx := context.Background()
@@ -104,7 +104,7 @@ func TestParentCache_SetBatch(t *testing.T) {
 	client := redis.NewUniversalClient(&redis.UniversalOptions{
 		Addrs: []string{s.Addr()},
 	})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	cache := cached.NewRedisParentCache(client)
 	ctx := context.Background()
