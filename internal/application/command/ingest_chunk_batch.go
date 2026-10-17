@@ -207,7 +207,7 @@ func (h *IngestChunkBatchHandler) Execute(
 		}
 
 		if err := tx.Commit(ctx); err != nil {
-			if IsPoolSaturated(h.pool, err) {
+			if IsPoolSaturated(nil, err) {
 				return nil, fmt.Errorf("%w: %v", ErrPoolSaturation, err)
 			}
 			return nil, fmt.Errorf("failed committing batch ingestion transaction: %w", err)

@@ -171,6 +171,9 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 		if errors.Is(err, command.ErrPoolSaturation) {
 			return status.Errorf(codes.ResourceExhausted, "resource exhausted: %v", err)
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Errorf(codes.DeadlineExceeded, "batch ingestion deadline exceeded: %v", err)
+		}
 		return status.Errorf(codes.Internal, "batch ingestion execution failed: %v", err)
 	}
 

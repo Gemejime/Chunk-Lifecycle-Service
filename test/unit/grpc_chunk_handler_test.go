@@ -283,7 +283,7 @@ func TestGRPCHandler_BatchIngestChunks_PoolSaturationClassification(t *testing.T
 	}
 }
 
-func TestGRPCHandler_BatchIngestChunks_DeadlineExceeded_TreatedAsInternal(t *testing.T) {
+func TestGRPCHandler_BatchIngestChunks_DeadlineExceeded(t *testing.T) {
 	handler := grpcTransport.NewChunkHandler(nil, nil, nil, nil)
 	executor := &mockIngestExecutor{
 		err: context.DeadlineExceeded,
@@ -311,8 +311,8 @@ func TestGRPCHandler_BatchIngestChunks_DeadlineExceeded_TreatedAsInternal(t *tes
 		t.Fatalf("expected error, got nil")
 	}
 	st, _ := status.FromError(err)
-	if st.Code() != codes.Internal {
-		t.Fatalf("expected codes.Internal for context.DeadlineExceeded alone, got %s", st.Code())
+	if st.Code() != codes.DeadlineExceeded {
+		t.Fatalf("expected codes.DeadlineExceeded for context.DeadlineExceeded, got %s", st.Code())
 	}
 }
 
