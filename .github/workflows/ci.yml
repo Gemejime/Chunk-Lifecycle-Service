@@ -38,7 +38,7 @@ jobs:
           test -z "$(goimports -l .)" || (echo "Unformatted Go files detected:" && goimports -d . && exit 1)
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.15.0
           args: --timeout=5m
