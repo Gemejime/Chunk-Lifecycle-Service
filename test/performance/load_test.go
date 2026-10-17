@@ -249,7 +249,7 @@ func TestBenchmark_IngestionBackpressureSaturation(t *testing.T) {
 			defer wg.Done()
 			stream := &perfMockStream{
 				ctx: context.Background(),
-				req: &chunkv1.IngestChunkRequest{
+				req: &chunkv1.BatchIngestChunksRequest{
 					BatchId: fmt.Sprintf("batch-%d", streamID),
 					Chunk: &chunkv1.ChunkNode{
 						ChunkId:        strings.Repeat("a", 64),
@@ -345,7 +345,7 @@ func TestBenchmark_MemoryAndAllocationBounds(t *testing.T) {
 type perfMockStream struct {
 	grpc.ServerStream
 	ctx  context.Context
-	req  *chunkv1.IngestChunkRequest
+	req  *chunkv1.BatchIngestChunksRequest
 	sent bool
 }
 
@@ -353,7 +353,7 @@ func (m *perfMockStream) Context() context.Context {
 	return m.ctx
 }
 
-func (m *perfMockStream) Recv() (*chunkv1.IngestChunkRequest, error) {
+func (m *perfMockStream) Recv() (*chunkv1.BatchIngestChunksRequest, error) {
 	if m.sent {
 		time.Sleep(10 * time.Millisecond) // Hold stream briefly to simulate saturation
 		return nil, io.EOF
@@ -362,6 +362,6 @@ func (m *perfMockStream) Recv() (*chunkv1.IngestChunkRequest, error) {
 	return m.req, nil
 }
 
-func (m *perfMockStream) SendAndClose(resp *chunkv1.IngestChunkResponse) error {
+func (m *perfMockStream) SendAndClose(resp *chunkv1.BatchIngestChunksResponse) error {
 	return nil
 }

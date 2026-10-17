@@ -25,16 +25,16 @@ import (
 type mockIngestStream struct {
 	grpc.ServerStream
 	ctx      context.Context
-	requests []*chunkv1.IngestChunkRequest
+	requests []*chunkv1.BatchIngestChunksRequest
 	index    int
-	response *chunkv1.IngestChunkResponse
+	response *chunkv1.BatchIngestChunksResponse
 }
 
 func (m *mockIngestStream) Context() context.Context {
 	return m.ctx
 }
 
-func (m *mockIngestStream) Recv() (*chunkv1.IngestChunkRequest, error) {
+func (m *mockIngestStream) Recv() (*chunkv1.BatchIngestChunksRequest, error) {
 	if m.index >= len(m.requests) {
 		return nil, io.EOF
 	}
@@ -43,7 +43,7 @@ func (m *mockIngestStream) Recv() (*chunkv1.IngestChunkRequest, error) {
 	return req, nil
 }
 
-func (m *mockIngestStream) SendAndClose(resp *chunkv1.IngestChunkResponse) error {
+func (m *mockIngestStream) SendAndClose(resp *chunkv1.BatchIngestChunksResponse) error {
 	m.response = resp
 	return nil
 }
@@ -55,7 +55,7 @@ func TestGRPCHandler_BatchIngestChunks_TokenBudgetBounds(t *testing.T) {
 	// Test chunk with 50 tokens (< 100)
 	streamUnderflow := &mockIngestStream{
 		ctx: context.Background(),
-		requests: []*chunkv1.IngestChunkRequest{
+		requests: []*chunkv1.BatchIngestChunksRequest{
 			{
 				BatchId: "batch-1",
 				Chunk: &chunkv1.ChunkNode{
@@ -81,7 +81,7 @@ func TestGRPCHandler_BatchIngestChunks_TokenBudgetBounds(t *testing.T) {
 	// Test chunk with 350 tokens (> 300)
 	streamOverflow := &mockIngestStream{
 		ctx: context.Background(),
-		requests: []*chunkv1.IngestChunkRequest{
+		requests: []*chunkv1.BatchIngestChunksRequest{
 			{
 				BatchId: "batch-1",
 				Chunk: &chunkv1.ChunkNode{
@@ -162,7 +162,7 @@ func TestGRPCHandler_ReconcileCDCUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	// Test Clean Promotion via gRPC
-	resp, err := handler.ReconcileCDCUpdate(ctx, &chunkv1.ReconcileCDCRequest{
+	resp, err := handler.ReconcileCDCUpdate(ctx, &chunkv1.ReconcileCDCUpdateRequest{
 		TenantId:            "tenant-grpc",
 		DocumentId:          "doc-grpc",
 		SectionKey:          "doc-grpc/sec_1",
@@ -189,7 +189,7 @@ func TestGRPCHandler_ReconcileCDCUpdate(t *testing.T) {
 	)
 	_ = repo.Save(ctx, patch)
 
-	resp, err = handler.ReconcileCDCUpdate(ctx, &chunkv1.ReconcileCDCRequest{
+	resp, err = handler.ReconcileCDCUpdate(ctx, &chunkv1.ReconcileCDCUpdateRequest{
 		TenantId:            "tenant-grpc",
 		DocumentId:          "doc-grpc",
 		SectionKey:          "doc-grpc/sec_2",
@@ -259,7 +259,7 @@ func TestGRPCHandler_BatchIngestChunks_PoolSaturationClassification(t *testing.T
 
 	stream := &mockIngestStream{
 		ctx: context.Background(),
-		requests: []*chunkv1.IngestChunkRequest{
+		requests: []*chunkv1.BatchIngestChunksRequest{
 			{
 				BatchId: "batch-sat",
 				Chunk: &chunkv1.ChunkNode{
@@ -292,7 +292,7 @@ func TestGRPCHandler_BatchIngestChunks_DeadlineExceeded_TreatedAsInternal(t *tes
 
 	stream := &mockIngestStream{
 		ctx: context.Background(),
-		requests: []*chunkv1.IngestChunkRequest{
+		requests: []*chunkv1.BatchIngestChunksRequest{
 			{
 				BatchId: "batch-deadline",
 				Chunk: &chunkv1.ChunkNode{
@@ -325,7 +325,7 @@ func TestGRPCHandler_BatchIngestChunks_GenericInternalError(t *testing.T) {
 
 	stream := &mockIngestStream{
 		ctx: context.Background(),
-		requests: []*chunkv1.IngestChunkRequest{
+		requests: []*chunkv1.BatchIngestChunksRequest{
 			{
 				BatchId: "batch-internal",
 				Chunk: &chunkv1.ChunkNode{

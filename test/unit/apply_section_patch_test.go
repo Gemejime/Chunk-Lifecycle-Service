@@ -182,10 +182,10 @@ type mockRows struct {
 	err  error
 }
 
-func (r *mockRows) Close()                                           {}
-func (r *mockRows) Err() error                                       { return r.err }
-func (r *mockRows) CommandTag() pgconn.CommandTag                   { return pgconn.CommandTag{} }
-func (r *mockRows) FieldDescriptions() []pgconn.FieldDescription     { return nil }
+func (r *mockRows) Close()                                       {}
+func (r *mockRows) Err() error                                   { return r.err }
+func (r *mockRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *mockRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *mockRows) Next() bool {
 	if r.idx < len(r.data) {
 		r.idx++

@@ -174,7 +174,7 @@ func (h *ChunkHandler) BatchIngestChunks(stream chunkv1.ChunkLifecycleService_Ba
 		return status.Errorf(codes.Internal, "batch ingestion execution failed: %v", err)
 	}
 
-	return stream.SendAndClose(&chunkv1.IngestChunkResponse{
+	return stream.SendAndClose(&chunkv1.BatchIngestChunksResponse{
 		BatchId:            res.BatchID,
 		ChunksProcessed:    res.ChunksProcessed,
 		ChunksDeduplicated: res.ChunksDeduplicated,
@@ -229,8 +229,8 @@ func (h *ChunkHandler) GetParentContainer(
 // ReconcileCDCUpdate evaluates an incoming upstream CDC change against the section patch ledger under ADR-002.
 func (h *ChunkHandler) ReconcileCDCUpdate(
 	ctx context.Context,
-	req *chunkv1.ReconcileCDCRequest,
-) (*chunkv1.ReconcileCDCResponse, error) {
+	req *chunkv1.ReconcileCDCUpdateRequest,
+) (*chunkv1.ReconcileCDCUpdateResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be null")
 	}
@@ -258,7 +258,7 @@ func (h *ChunkHandler) ReconcileCDCUpdate(
 		return nil, status.Errorf(codes.Internal, "reconciliation failed: %v", err)
 	}
 
-	return &chunkv1.ReconcileCDCResponse{
+	return &chunkv1.ReconcileCDCUpdateResponse{
 		Quarantined:        res.Quarantined,
 		PatchId:            res.PatchID,
 		Message:            res.Message,

@@ -16,7 +16,7 @@ service ChunkLifecycleService {
   // - Child chunk token count must be between 100 and 300 tokens (codes.InvalidArgument).
   // - Tenant isolation is enforced via tenant_id on all records.
   // - Under database write saturation, returns codes.ResourceExhausted backpressure.
-  rpc BatchIngestChunks(stream IngestChunkRequest) returns (IngestChunkResponse);
+  rpc BatchIngestChunks(stream BatchIngestChunksRequest) returns (BatchIngestChunksResponse);
 
   // GetParentContainer retrieves a compiled parent context container by parent_id
   // and version from the low-latency read plane (Redis 7.2 Cluster / Read Replicas).
@@ -29,7 +29,7 @@ service ChunkLifecycleService {
   // ReconcileCDCUpdate evaluates an incoming upstream CDC change against the section patch ledger.
   // If an active operator patch exists for the section and its base hash does not match,
   // the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
-  rpc ReconcileCDCUpdate(ReconcileCDCRequest) returns (ReconcileCDCResponse);
+  rpc ReconcileCDCUpdate(ReconcileCDCUpdateRequest) returns (ReconcileCDCUpdateResponse);
 
   // ApplySectionPatch applies an operator override to an identified section key, slices new child
   // chunks, recompiles parent context windows, atomically mints a new monotonic manifest version (v_n+1),
@@ -41,8 +41,8 @@ service ChunkLifecycleService {
   rpc ApplySectionPatch(ApplySectionPatchRequest) returns (ApplySectionPatchResponse);
 }
 
-// IngestChunkRequest represents an individual chunk within a batch ingestion stream.
-message IngestChunkRequest {
+// BatchIngestChunksRequest represents an individual chunk within a batch ingestion stream.
+message BatchIngestChunksRequest {
   // batch_id groups chunks into a single transactional unlogged staging partition.
   string batch_id = 1;
   // chunk contains the child chunk node data to ingest.
@@ -53,8 +53,8 @@ message IngestChunkRequest {
   int64 manifest_version = 4;
 }
 
-// IngestChunkResponse provides the result summary for a completed batch ingestion stream.
-message IngestChunkResponse {
+// BatchIngestChunksResponse provides the result summary for a completed batch ingestion stream.
+message BatchIngestChunksResponse {
   // batch_id echoes the processed batch UUID.
   string batch_id = 1;
   // chunks_processed is the total number of chunks received in the stream.
@@ -83,8 +83,8 @@ message GetParentContainerResponse {
   ParentContainer container = 1;
 }
 
-// ReconcileCDCRequest submits an upstream CDC section update for reconciliation.
-message ReconcileCDCRequest {
+// ReconcileCDCUpdateRequest submits an upstream CDC section update for reconciliation.
+message ReconcileCDCUpdateRequest {
   // tenant_id enforces strict multi-tenant boundary isolation.
   string tenant_id = 1;
   // document_id identifies the document containing the section.
@@ -97,8 +97,8 @@ message ReconcileCDCRequest {
   string upstream_content = 5;
 }
 
-// ReconcileCDCResponse reports the outcome of the reconciliation evaluation.
-message ReconcileCDCResponse {
+// ReconcileCDCUpdateResponse reports the outcome of the reconciliation evaluation.
+message ReconcileCDCUpdateResponse {
   // quarantined indicates whether the section was flagged as SECTION_STALE_QUARANTINE.
   bool quarantined = 1;
   // patch_id identifies the conflicting operator patch if quarantined.

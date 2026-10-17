@@ -22,6 +22,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// BatchIngestChunksRequest represents an individual chunk within a batch ingestion stream.
+type BatchIngestChunksRequest = IngestChunkRequest
+
+// BatchIngestChunksResponse provides the result summary for a completed batch ingestion stream.
+type BatchIngestChunksResponse = IngestChunkResponse
+
+// ReconcileCDCUpdateRequest submits an upstream CDC section update for reconciliation.
+type ReconcileCDCUpdateRequest = ReconcileCDCRequest
+
+// ReconcileCDCUpdateResponse reports the outcome of the reconciliation evaluation.
+type ReconcileCDCUpdateResponse = ReconcileCDCResponse
+
 // IngestChunkRequest represents an individual chunk within a batch ingestion stream.
 type IngestChunkRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

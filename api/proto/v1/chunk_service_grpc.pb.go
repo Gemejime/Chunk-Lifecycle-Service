@@ -40,7 +40,7 @@ type ChunkLifecycleServiceClient interface {
 	// - Child chunk token count must be between 100 and 300 tokens (codes.InvalidArgument).
 	// - Tenant isolation is enforced via tenant_id on all records.
 	// - Under database write saturation, returns codes.ResourceExhausted backpressure.
-	BatchIngestChunks(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[IngestChunkRequest, IngestChunkResponse], error)
+	BatchIngestChunks(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[BatchIngestChunksRequest, BatchIngestChunksResponse], error)
 	// GetParentContainer retrieves a compiled parent context container by parent_id
 	// and version from the low-latency read plane (Redis 7.2 Cluster / Read Replicas).
 	//
@@ -51,7 +51,7 @@ type ChunkLifecycleServiceClient interface {
 	// ReconcileCDCUpdate evaluates an incoming upstream CDC change against the section patch ledger.
 	// If an active operator patch exists for the section and its base hash does not match,
 	// the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
-	ReconcileCDCUpdate(ctx context.Context, in *ReconcileCDCRequest, opts ...grpc.CallOption) (*ReconcileCDCResponse, error)
+	ReconcileCDCUpdate(ctx context.Context, in *ReconcileCDCUpdateRequest, opts ...grpc.CallOption) (*ReconcileCDCUpdateResponse, error)
 	// ApplySectionPatch applies an operator override to an identified section key.
 	ApplySectionPatch(ctx context.Context, in *ApplySectionPatchRequest, opts ...grpc.CallOption) (*ApplySectionPatchResponse, error)
 }
@@ -64,18 +64,18 @@ func NewChunkLifecycleServiceClient(cc grpc.ClientConnInterface) ChunkLifecycleS
 	return &chunkLifecycleServiceClient{cc}
 }
 
-func (c *chunkLifecycleServiceClient) BatchIngestChunks(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[IngestChunkRequest, IngestChunkResponse], error) {
+func (c *chunkLifecycleServiceClient) BatchIngestChunks(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[BatchIngestChunksRequest, BatchIngestChunksResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ChunkLifecycleService_ServiceDesc.Streams[0], ChunkLifecycleService_BatchIngestChunks_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[IngestChunkRequest, IngestChunkResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[BatchIngestChunksRequest, BatchIngestChunksResponse]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ChunkLifecycleService_BatchIngestChunksClient = grpc.ClientStreamingClient[IngestChunkRequest, IngestChunkResponse]
+type ChunkLifecycleService_BatchIngestChunksClient = grpc.ClientStreamingClient[BatchIngestChunksRequest, BatchIngestChunksResponse]
 
 func (c *chunkLifecycleServiceClient) GetParentContainer(ctx context.Context, in *GetParentContainerRequest, opts ...grpc.CallOption) (*GetParentContainerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -87,9 +87,9 @@ func (c *chunkLifecycleServiceClient) GetParentContainer(ctx context.Context, in
 	return out, nil
 }
 
-func (c *chunkLifecycleServiceClient) ReconcileCDCUpdate(ctx context.Context, in *ReconcileCDCRequest, opts ...grpc.CallOption) (*ReconcileCDCResponse, error) {
+func (c *chunkLifecycleServiceClient) ReconcileCDCUpdate(ctx context.Context, in *ReconcileCDCUpdateRequest, opts ...grpc.CallOption) (*ReconcileCDCUpdateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReconcileCDCResponse)
+	out := new(ReconcileCDCUpdateResponse)
 	err := c.cc.Invoke(ctx, ChunkLifecycleService_ReconcileCDCUpdate_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ type ChunkLifecycleServiceServer interface {
 	// - Child chunk token count must be between 100 and 300 tokens (codes.InvalidArgument).
 	// - Tenant isolation is enforced via tenant_id on all records.
 	// - Under database write saturation, returns codes.ResourceExhausted backpressure.
-	BatchIngestChunks(grpc.ClientStreamingServer[IngestChunkRequest, IngestChunkResponse]) error
+	BatchIngestChunks(grpc.ClientStreamingServer[BatchIngestChunksRequest, BatchIngestChunksResponse]) error
 	// GetParentContainer retrieves a compiled parent context container by parent_id
 	// and version from the low-latency read plane (Redis 7.2 Cluster / Read Replicas).
 	//
@@ -132,7 +132,7 @@ type ChunkLifecycleServiceServer interface {
 	// ReconcileCDCUpdate evaluates an incoming upstream CDC change against the section patch ledger.
 	// If an active operator patch exists for the section and its base hash does not match,
 	// the section enters SECTION_STALE_QUARANTINE (ADR-002) without speculative 3-way AST diffing.
-	ReconcileCDCUpdate(context.Context, *ReconcileCDCRequest) (*ReconcileCDCResponse, error)
+	ReconcileCDCUpdate(context.Context, *ReconcileCDCUpdateRequest) (*ReconcileCDCUpdateResponse, error)
 	// ApplySectionPatch applies an operator override to an identified section key.
 	ApplySectionPatch(context.Context, *ApplySectionPatchRequest) (*ApplySectionPatchResponse, error)
 	mustEmbedUnimplementedChunkLifecycleServiceServer()
@@ -145,13 +145,13 @@ type ChunkLifecycleServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedChunkLifecycleServiceServer struct{}
 
-func (UnimplementedChunkLifecycleServiceServer) BatchIngestChunks(grpc.ClientStreamingServer[IngestChunkRequest, IngestChunkResponse]) error {
+func (UnimplementedChunkLifecycleServiceServer) BatchIngestChunks(grpc.ClientStreamingServer[BatchIngestChunksRequest, BatchIngestChunksResponse]) error {
 	return status.Error(codes.Unimplemented, "method BatchIngestChunks not implemented")
 }
 func (UnimplementedChunkLifecycleServiceServer) GetParentContainer(context.Context, *GetParentContainerRequest) (*GetParentContainerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetParentContainer not implemented")
 }
-func (UnimplementedChunkLifecycleServiceServer) ReconcileCDCUpdate(context.Context, *ReconcileCDCRequest) (*ReconcileCDCResponse, error) {
+func (UnimplementedChunkLifecycleServiceServer) ReconcileCDCUpdate(context.Context, *ReconcileCDCUpdateRequest) (*ReconcileCDCUpdateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReconcileCDCUpdate not implemented")
 }
 func (UnimplementedChunkLifecycleServiceServer) ApplySectionPatch(context.Context, *ApplySectionPatchRequest) (*ApplySectionPatchResponse, error) {
@@ -179,11 +179,11 @@ func RegisterChunkLifecycleServiceServer(s grpc.ServiceRegistrar, srv ChunkLifec
 }
 
 func _ChunkLifecycleService_BatchIngestChunks_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ChunkLifecycleServiceServer).BatchIngestChunks(&grpc.GenericServerStream[IngestChunkRequest, IngestChunkResponse]{ServerStream: stream})
+	return srv.(ChunkLifecycleServiceServer).BatchIngestChunks(&grpc.GenericServerStream[BatchIngestChunksRequest, BatchIngestChunksResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ChunkLifecycleService_BatchIngestChunksServer = grpc.ClientStreamingServer[IngestChunkRequest, IngestChunkResponse]
+type ChunkLifecycleService_BatchIngestChunksServer = grpc.ClientStreamingServer[BatchIngestChunksRequest, BatchIngestChunksResponse]
 
 func _ChunkLifecycleService_GetParentContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetParentContainerRequest)
@@ -204,7 +204,7 @@ func _ChunkLifecycleService_GetParentContainer_Handler(srv interface{}, ctx cont
 }
 
 func _ChunkLifecycleService_ReconcileCDCUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReconcileCDCRequest)
+	in := new(ReconcileCDCUpdateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func _ChunkLifecycleService_ReconcileCDCUpdate_Handler(srv interface{}, ctx cont
 		FullMethod: ChunkLifecycleService_ReconcileCDCUpdate_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ChunkLifecycleServiceServer).ReconcileCDCUpdate(ctx, req.(*ReconcileCDCRequest))
+		return srv.(ChunkLifecycleServiceServer).ReconcileCDCUpdate(ctx, req.(*ReconcileCDCUpdateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
