@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rag-chunk-server-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Gemejime/rag-chunk-lifecycle-service.git
+    targetRevision: HEAD
+    path: deployments/helm
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: "canary.enabled"
+          value: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rag-chunk-lifecycle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

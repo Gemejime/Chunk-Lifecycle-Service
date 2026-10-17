@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package chunk.v1;
+
+option go_package = "github.com/Gemejime/rag-chunk-lifecycle-service/api/proto/v1;chunkv1";
+
+import "google/protobuf/timestamp.proto";
+
+// PatchStatus defines the lifecycle states of a manual operator section patch.
+enum PatchStatus {
+  // PATCH_STATUS_UNSPECIFIED represents an uninitialized or unknown status.
+  PATCH_STATUS_UNSPECIFIED = 0;
+  // PATCH_STATUS_ACTIVE indicates the patch is currently applied and active in compilation.
+  PATCH_STATUS_ACTIVE = 1;
+  // PATCH_STATUS_STALE_QUARANTINE indicates upstream CDC modified the section under an active patch,
+  // requiring human review or administrative reconciliation.
+  PATCH_STATUS_STALE_QUARANTINE = 2;
+  // PATCH_STATUS_SUPERSEDED indicates the patch has been replaced by a newer operator patch or upstream version.
+  PATCH_STATUS_SUPERSEDED = 3;
+}
+
+// TriggerReason indicates why a transactional outbox re-vectorization event was emitted.
+enum TriggerReason {
+  // TRIGGER_REASON_UNSPECIFIED represents an uninitialized or unknown trigger reason.
+  TRIGGER_REASON_UNSPECIFIED = 0;
+  // TRIGGER_REASON_PATCH_APPLIED indicates an operator patch was successfully applied to a section.
+  TRIGGER_REASON_PATCH_APPLIED = 1;
+  // TRIGGER_REASON_CDC_RECONCILED indicates upstream CDC updates triggered re-vectorization.
+  TRIGGER_REASON_CDC_RECONCILED = 2;
+  // TRIGGER_REASON_QUARANTINE_OVERRIDDEN indicates an administrative override resolved a quarantine.
+  TRIGGER_REASON_QUARANTINE_OVERRIDDEN = 3;
+}
+
+// ChunkNode represents a fine-grained, content-addressed child chunk.
+// Token budget invariant: 100 to 300 tokens.
+// Identity invariant: chunk_id is a 64-character lowercase hex string computed via SHA-256 (ADR-001).
+message ChunkNode {
+  // chunk_id is the deterministic SHA-256 content-addressed hash.
+  string chunk_id = 1;
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 2;
+  // parent_id references the enclosing parent context container.
+  string parent_id = 3;
+  // content is the normalized text body of the child chunk.
+  string content = 4;
+  // token_count specifies the number of tokens in this chunk (budget: 100-300 tokens).
+  int32 token_count = 5;
+  // structural_path denotes the hierarchical document path (e.g., "doc_uuid/sec_4/para_2").
+  string structural_path = 6;
+  // byte_offset_start is the 0-indexed starting byte offset in the source document.
+  int64 byte_offset_start = 7;
+  // byte_offset_end is the 0-indexed ending byte offset in the source document.
+  int64 byte_offset_end = 8;
+  // metadata contains arbitrary key-value attributes associated with the chunk.
+  map<string, string> metadata = 9;
+}
+
+// ParentContainer represents a compiled parent context window entity.
+// Token budget invariant: 800 to 1,500 tokens.
+message ParentContainer {
+  // parent_id is the unique identifier of the parent context container.
+  string parent_id = 1;
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 2;
+  // document_id identifies the parent document aggregate root.
+  string document_id = 3;
+  // manifest_version is the monotonic manifest version this container belongs to.
+  int64 manifest_version = 4;
+  // heading_path denotes the hierarchical section heading breadcrumb.
+  string heading_path = 5;
+  // content is the compiled aggregated text of child chunks for context window retrieval.
+  string content = 6;
+  // token_count specifies the compiled token count (budget: 800-1,500 tokens).
+  int32 token_count = 7;
+  // child_chunk_ids contains the ordered list of child ChunkNode IDs contained in this window.
+  repeated string child_chunk_ids = 8;
+}
+
+// DocumentManifest represents an immutable document version snapshot aggregate root.
+// Invariant: versions strictly advance monotonically (v_n+1 > v_n).
+message DocumentManifest {
+  // document_id identifies the document aggregate root.
+  string document_id = 1;
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 2;
+  // version is the monotonic integer version counter (e.g., 1, 2, 3).
+  int64 version = 3;
+  // chunk_count specifies the total number of child chunks bound to this manifest version.
+  int32 chunk_count = 4;
+  // total_tokens specifies the cumulative token count of all bound chunks.
+  int32 total_tokens = 5;
+  // status represents the current lifecycle status of this manifest (e.g., "ACTIVE", "FINALIZED").
+  string status = 6;
+  // created_at is the timestamp when this manifest version was created.
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// SectionPatch represents an operator override anchored to a specific section key.
+message SectionPatch {
+  // patch_id is the unique UUID string of the operator patch.
+  string patch_id = 1;
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 2;
+  // document_id identifies the target document.
+  string document_id = 3;
+  // section_key denotes the structural anchor (e.g., "doc_uuid/sec_4").
+  string section_key = 4;
+  // base_content_hash is the SHA-256 hash of the content at the time the operator applied the patch.
+  string base_content_hash = 5;
+  // patched_content is the operator-supplied replacement text body.
+  string patched_content = 6;
+  // operator_id identifies the human operator or agent who authored the patch.
+  string operator_id = 7;
+  // status is the current lifecycle state of this patch.
+  PatchStatus status = 8;
+  // created_at is the timestamp when the patch was authored.
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// OutboxEvent represents a transactional outbox event for Debezium CDC WAL tailing.
+message OutboxEvent {
+  // event_id is the unique UUID string of the outbox record.
+  string event_id = 1;
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 2;
+  // aggregate_type denotes the domain aggregate type (e.g., "ChunkNode", "SectionPatch").
+  string aggregate_type = 3;
+  // aggregate_id denotes the primary identity of the target aggregate.
+  string aggregate_id = 4;
+  // event_type specifies the event name (e.g., "ChunkRevectorizationRequired").
+  string event_type = 5;
+  // payload_json contains the serialized JSON payload for downstream embedding ingestion.
+  string payload_json = 6;
+  // trigger_reason specifies why this event was emitted.
+  TriggerReason trigger_reason = 7;
+  // timestamp_utc is the UTC creation timestamp.
+  google.protobuf.Timestamp timestamp_utc = 8;
+}
+
+// ApplySectionPatchRequest specifies operator override payload anchored to a section key.
+message ApplySectionPatchRequest {
+  // tenant_id enforces strict multi-tenant boundary isolation.
+  string tenant_id = 1;
+  // document_id identifies the document aggregate root.
+  string document_id = 2;
+  // section_key denotes the structural section identifier (e.g., "doc_uuid/sec_4").
+  string section_key = 3;
+  // base_content_hash is the expected SHA-256 hash of the content before patch application (optimistic concurrency control).
+  string base_content_hash = 4;
+  // patched_content is the operator replacement text body.
+  string patched_content = 5;
+  // operator_id identifies the operator authoring the override.
+  string operator_id = 6;
+  // client_mutation_id is an idempotency token ensuring atomic single application.
+  string client_mutation_id = 7;
+}
+
+// ApplySectionPatchResponse returns the compilation and outbox emission outcome of a patch overlay.
+message ApplySectionPatchResponse {
+  // patch_id is the unique UUID string of the applied patch.
+  string patch_id = 1;
+  // manifest_version is the newly minted monotonic manifest version (v_n+1).
+  int64 manifest_version = 2;
+  // status is the lifecycle state of the patch (e.g., "ACTIVE").
+  PatchStatus status = 3;
+  // recompiled_parent_ids lists the IDs of parent containers recompiled under the new version.
+  repeated string recompiled_parent_ids = 4;
+  // revectorization_chunk_ids lists the newly generated child chunk IDs requiring downstream embedding.
+  repeated string revectorization_chunk_ids = 5;
+}
+

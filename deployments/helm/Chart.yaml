@@ -1,0 +1,15 @@
+apiVersion: v2
+name: rag-chunk-lifecycle-service
+description: High-throughput, stateless Go microservice for document versioning, content-addressed chunking, parent-child context compilation, section CDC invalidation, and outbox egress.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - rag
+  - chunk-lifecycle
+  - grpc
+  - redis
+  - postgres
+maintainers:
+  - name: Gemejime Platform Team
+    email: platform@gemejime.internal

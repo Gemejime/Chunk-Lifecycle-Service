@@ -1,116 +1,63 @@
-name: rag-chunk-lifecycle-service CI/CD
+name: CI Pipeline
 
 on:
   push:
-    branches: [ main, master, "release/**" ]
+    branches: [ "main", "rag-chunk-lifecycle-service" ]
   pull_request:
-    branches: [ main, master ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ "main", "rag-chunk-lifecycle-service" ]
 
 permissions:
   contents: read
-  pull-requests: read
-  security-events: write
 
 jobs:
-  proto-lint:
-    name: Protobuf Lint & Check
+  lint-and-spec:
+    name: Lint & Spec Verification
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Buf CLI
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+          cache: true
+
+      - name: Set up Buf
         uses: bufbuild/buf-setup-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lint Protobuf
+      - name: Run Buf Lint
+        run: buf lint
+
+      - name: Verify Formatting (goimports)
         run: |
-          if [ -f "buf.yaml" ]; then
-            buf lint
-          else
-            echo "No buf.yaml configured yet; skipping buf lint."
-          fi
-
-  lint:
-    name: Go Lint (golangci-lint)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          check-latest: true
-          cache: true
-
-      - name: Verify Go Module Tidiness
-        run: |
-          if [ -f "go.mod" ]; then
-            go mod tidy
-            git diff --exit-code go.mod go.sum || (echo "go.mod or go.sum is not tidy" && exit 1)
-          else
-            echo "go.mod not yet created; skipping mod tidy check."
-          fi
+          go install golang.org/x/tools/cmd/goimports@latest
+          test -z "$(goimports -l .)" || (echo "Unformatted Go files detected:" && goimports -d . && exit 1)
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        if: hashFiles('go.mod') != ''
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.61.0
+          version: v2.15.0
           args: --timeout=5m
 
-  test-unit:
-    name: Unit Tests & Coverage
+  test:
+    name: Test Suite with Race Detection
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: true
-
-      - name: Run Unit Tests
-        run: |
-          if [ -f "go.mod" ]; then
-            go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
-          else
-            echo "go.mod not yet created; skipping unit tests."
-          fi
-
-      - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
-        if: hashFiles('coverage.out') != ''
-        with:
-          name: unit-test-coverage
-          path: coverage.out
-          retention-days: 7
-
-  test-integration:
-    name: Integration Tests (PostgreSQL 16 & Redis 7.2)
-    runs-on: ubuntu-latest
-    needs: [test-unit]
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: chunk_user
-          POSTGRES_PASSWORD: chunk_password
-          POSTGRES_DB: chunk_lifecycle_test
+          POSTGRES_USER: rag_user
+          POSTGRES_PASSWORD: rag_password
+          POSTGRES_DB: rag_chunk_db
         ports:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
@@ -120,58 +67,53 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
-    env:
-      TEST_POSTGRES_URL: postgres://chunk_user:chunk_password@localhost:5432/chunk_lifecycle_test?sslmode=disable
-      TEST_REDIS_URL: localhost:6379
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version-file: 'go.mod'
+          check-latest: true
           cache: true
 
-      - name: Run Integration Tests
-        run: |
-          if [ -d "test/integration" ] && [ -f "go.mod" ]; then
-            go test -v -race -tags=integration ./test/integration/...
-          else
-            echo "Integration tests or go.mod not yet present; skipping integration suite."
-          fi
+      - name: Run Unit Tests
+        run: go test -v -race ./test/unit/...
 
-  vulnerability-scan:
-    name: Go Security Audit (govulncheck)
+      - name: Run Performance Benchmarks
+        run: go test -v -tags=performance ./test/performance/...
+
+      - name: Run Vulnerability Check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  helm-and-k8s:
+    name: Helm & Kubernetes Manifest Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
         with:
-          go-version: '1.23'
-          cache: true
+          version: v3.14.0
 
-      - name: Run govulncheck
-        run: |
-          if [ -f "go.mod" ]; then
-            go install golang.org/x/vuln/cmd/govulncheck@latest
-            govulncheck ./...
-          else
-            echo "go.mod not yet created; skipping govulncheck."
-          fi
+      - name: Lint Helm Chart
+        run: helm lint deployments/helm
+
+      - name: Template Validate Helm Chart
+        run: helm template test deployments/helm
 
   docker-build:
-    name: Docker Build Validation (Distroless)
+    name: Zero-Trust Distroless Container Build
     runs-on: ubuntu-latest
-    needs: [lint, test-unit]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -179,22 +121,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Validate Chunk Server Docker Build
+      - name: Build Container Image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: deployments/docker/Dockerfile
-          target: chunk-server
           push: false
-          tags: rag-chunk-lifecycle-service/chunk-server:test
-        continue-on-error: true # Continues if Dockerfile has not been authored yet
-
-      - name: Validate Reconciliation Worker Docker Build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: deployments/docker/Dockerfile
-          target: reconciliation-worker
-          push: false
-          tags: rag-chunk-lifecycle-service/reconciliation-worker:test
-        continue-on-error: true # Continues if Dockerfile has not been authored yet
+          tags: rag-chunk-lifecycle-service:latest

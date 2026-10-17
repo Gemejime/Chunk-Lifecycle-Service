@@ -1,0 +1,50 @@
+{{- if .Values.prometheusRule.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "rag-chunk-lifecycle-service.fullname" . }}-alerts
+  labels:
+    {{- include "rag-chunk-lifecycle-service.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: rag-chunk-lifecycle-service.rules
+      rules:
+        # Alert 1: Quarantine Spike
+        - alert: SectionStaleQuarantineSpike
+          expr: (sum(rate(chunk_section_stale_quarantine_total[10m])) / sum(rate(chunk_cdc_reconcile_runs_total[10m]) > 0)) > 0.02
+          for: 5m
+          labels:
+            severity: warning
+            team: platform-data
+          annotations:
+            summary: "Upstream CDC section modifications quarantine rate spike"
+            description: "More than 2% of active upstream CDC mutations resulted in SECTION_STALE_QUARANTINE over the last 10 minutes. Operator review required at /v1/conflicts/quarantine."
+            runbook_url: "https://wiki.gemejime.internal/runbooks/quarantine-resolution"
+
+        # Alert 2: P99 Compilation Latency Degradation
+        - alert: ChunkCompilationLatencyP99Exceeded
+          expr: histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket[5m])) by (le)) > 0.200
+          for: 5m
+          labels:
+            severity: critical
+            team: platform-core
+          annotations:
+            summary: "Parent context compilation P99 latency exceeded 200ms"
+            description: "Parent container compilation P99 latency is {{ "{{" }} $value {{ "}}" }}s (>200ms ceiling; SLO is <=120ms) for more than 5 minutes."
+            runbook_url: "https://wiki.gemejime.internal/runbooks/compilation-latency"
+
+        # Alert 3: High Memory Pressure
+        - alert: ChunkLifecycleHighMemoryPressure
+          expr: container_memory_working_set_bytes{container="chunk-server"} > (1610612736 * 0.8)
+          for: 2m
+          labels:
+            severity: critical
+            team: platform-core
+          annotations:
+            summary: "Chunk Server pod memory exceeds 80% of 1.5GiB container limit"
+            description: "Pod {{ "{{" }} $labels.pod {{ "}}" }} memory working set is {{ "{{" }} $value {{ "}}" }} bytes (>80% of 1.5GiB limit) for >2m. Risk of OOM kill."
+            runbook_url: "https://wiki.gemejime.internal/runbooks/memory-saturation"
+{{- end }}

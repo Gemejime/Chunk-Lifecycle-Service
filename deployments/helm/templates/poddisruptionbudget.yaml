@@ -1,0 +1,13 @@
+{{- if .Values.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rag-chunk-lifecycle-service.fullname" . }}-pdb
+  labels:
+    {{- include "rag-chunk-lifecycle-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "rag-chunk-lifecycle-service.chunkServerSelectorLabels" . | nindent 6 }}
+{{- end }}
