@@ -169,14 +169,15 @@ func main() {
 	lis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {
 		slog.Error("failed listening on grpc port", slog.String("error", err.Error()))
-	} else {
-		go func() {
-			slog.Info("starting grpc streaming ingress server", slog.String("addr", lis.Addr().String()))
-			if err := grpcServer.Serve(lis); err != nil {
-				slog.Error("grpc server failed", slog.String("error", err.Error()))
-			}
-		}()
+		os.Exit(1)
 	}
+
+	go func() {
+		slog.Info("starting grpc streaming ingress server", slog.String("addr", lis.Addr().String()))
+		if err := grpcServer.Serve(lis); err != nil {
+			slog.Error("grpc server failed", slog.String("error", err.Error()))
+		}
+	}()
 
 	// 9. Graceful Shutdown on SIGINT / SIGTERM
 	sigChan := make(chan os.Signal, 1)

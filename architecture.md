@@ -1,4 +1,4 @@
-# Architecture Specification: rag-chunk-lifecycle-service & Multimodal RAG Ecosystemis 
+# Architecture Specification: rag-chunk-lifecycle-service & Multimodal RAG Ecosystem
 
 This document provides a comprehensive technical architecture specification for the **`rag-chunk-lifecycle-service`** microservice, its internal hexagonal boundaries, and its interfaces and integration patterns with upstream and downstream microservices across the enterprise Multimodal Retrieval-Augmented Generation (RAG) platform.
 

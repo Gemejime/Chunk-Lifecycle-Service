@@ -54,7 +54,7 @@ The service manages immutable document version manifests ($v_1 \dots v_n$), dete
 
 | ADR | Title | Decision & Rationale |
 | :--- | :--- | :--- |
-| **ADR-001** | **Deterministic Content-Addressed Chunk Identities** | All chunk identities are computed via SHA-256 over 8-byte big-endian length-prefixed UTF-8 fields: `len_8BE(TenantID) || TenantID || len_8BE(NormalizedContent) || NormalizedContent || len_8BE(StructuralPath) || StructuralPath`. Eliminates volatile character/token offset drift. |
+| **ADR-001** | **Deterministic Content-Addressed Chunk Identities** | All chunk identities are computed via SHA-256 over 8-byte big-endian length-prefixed UTF-8 fields: `len_8BE(TenantID) \|\| TenantID \|\| len_8BE(NormalizedContent) \|\| NormalizedContent \|\| len_8BE(StructuralPath) \|\| StructuralPath`. Eliminates volatile character/token offset drift. |
 | **ADR-002** | **Pragmatic Section-Key Invalidation** | When upstream CDC mutations conflict with manual section patches, the patch transitions to `SECTION_STALE_QUARANTINE`. Rejects speculative 3-way AST token rebasing in favor of deterministic human-in-the-loop (HITL) resolution. |
 | **ADR-003** | **Decoupled Ingress and Reconciliation Processes** | Deploys `cmd/chunk-server` (network ingress, gRPC/REST) and `cmd/reconciliation-worker` (CDC reconciliation, cache warming) as independent Kubernetes pods to isolate memory allocations and thread pools. |
 | **ADR-004** | **Decoupled Low-Latency Read Plane** | Context assembly requests are fulfilled exclusively from Redis 7.2 Cluster (or read-replicas), preventing ingestion write lock contention from degrading LLM generation latency. |
