@@ -1,0 +1,100 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rag-chunk-lifecycle-service-chunk-server
+  namespace: rag-chunk-lifecycle
+  labels:
+    app.kubernetes.io/name: rag-chunk-lifecycle-service
+    app.kubernetes.io/component: chunk-server
+spec:
+  replicas: 4
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-chunk-lifecycle-service
+      app.kubernetes.io/component: chunk-server
+  strategy:
+    canary:
+      stableService: rag-chunk-lifecycle-service-chunk-server-stable
+      canaryService: rag-chunk-lifecycle-service-chunk-server-canary
+      analysis:
+        templates:
+          - templateName: chunk-server-canary-analysis
+        args:
+          - name: service-name
+            value: rag-chunk-lifecycle-service-chunk-server
+      steps:
+        # Step 1: 10% canary traffic with verification pause
+        - setWeight: 10
+        - pause: { duration: 2m }
+        # Step 2: 25% canary traffic with verification pause
+        - setWeight: 25
+        - pause: { duration: 5m }
+        # Step 3: Full 100% rollout upon passing metric criteria
+        - setWeight: 100
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-chunk-lifecycle-service
+        app.kubernetes.io/component: chunk-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: rag-chunk-lifecycle-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chunk-server
+          image: ghcr.io/gemejime/rag-chunk-lifecycle-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: grpc-flight
+              containerPort: 50051
+              protocol: TCP
+            - name: http-rest
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: rag-chunk-lifecycle-service-config
+            - secretRef:
+                name: rag-chunk-lifecycle-service-secret
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http-rest
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http-rest
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 1.5Gi

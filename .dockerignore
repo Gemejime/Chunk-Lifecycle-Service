@@ -1,0 +1,11 @@
+.git
+.github
+.ai
+prompts
+tasks
+test
+bin
+*.exe
+*.test
+*.out
+*.log

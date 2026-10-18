@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: rag-chunk-lifecycle-service-appset
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            cluster: in-cluster
+            server: https://kubernetes.default.svc
+            targetRevision: dev
+            replicaCount: "1"
+            canaryEnabled: "false"
+          - env: staging
+            cluster: in-cluster
+            server: https://kubernetes.default.svc
+            targetRevision: staging
+            replicaCount: "2"
+            canaryEnabled: "false"
+          - env: production
+            cluster: in-cluster
+            server: https://kubernetes.default.svc
+            targetRevision: main
+            replicaCount: "3"
+            canaryEnabled: "true"
+  template:
+    metadata:
+      name: 'rag-chunk-lifecycle-{{env}}'
+      namespace: argocd
+      labels:
+        environment: '{{env}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Gemejime/rag-chunk-lifecycle-service.git
+        targetRevision: '{{targetRevision}}'
+        path: deployments/helm
+        helm:
+          valueFiles:
+            - values.yaml
+          parameters:
+            - name: replicaCount
+              value: '{{replicaCount}}'
+            - name: canary.enabled
+              value: '{{canaryEnabled}}'
+      destination:
+        server: '{{server}}'
+        namespace: 'rag-chunk-lifecycle-{{env}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m

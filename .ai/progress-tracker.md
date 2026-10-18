@@ -1,0 +1,116 @@
+# Progress Tracker — rag-chunk-lifecycle-service
+
+## Current Phase
+**Phase 4 Complete: Load Testing, Decoupled Read Path, GitOps ArgoCD & Production Hardening (Weeks 7–8)**
+
+---
+
+## Current Goal
+All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, hardened, and verified with zero drift across Doc API and architecture specifications.
+
+---
+
+## Completed
+- [x] Initialized Git repository structure and branch `rag-chunk-lifecycle-service`.
+- [x] Created comprehensive [.gitignore](.gitignore) excluding `tasks/`, binaries, logs, and profiling dumps.
+- [x] Installed and verified `goimports` (`golang.org/x/tools/cmd/goimports`) and `golangci-lint` (v1.64.5).
+- [x] Upgraded and rewritten all `.ai/` specifications to match `rag-chunk-lifecycle-service`:
+  - `project-overview.md` (SLIs/SLOs, core flows, scope & exclusions)
+  - `architecture.md` (Hexagonal layout, Layer 1–5 backend concepts, ADRs)
+  - `code-standards.md` (Go 1.23 idioms, Doc API update rule, Secured Logging)
+  - `doc-api.md` (OpenAPI 3.0+ specifications, Protobuf contracts, zero-drift synchronization workflows, and Doc API invariants)
+  - `security.md` (Threat model, tenant isolation, Secured Logging invariants, distroless container safety)
+  - `ai-workflow-rules.md` (Spec-driven workflow, human-in-the-loop prompts, pre-commit gates)
+  - `agents.md` (Principal Go microservice AI engineer persona & execution protocol)
+- [x] Codified mandatory **Doc API** synchronization (ensuring OpenAPI 3.0 and Protobuf API documentation is updated alongside any code changes).
+- [x] Codified mandatory **Secured Logging** invariants (structured JSON, token redaction, raw chunk masking).
+- [x] Created root [GEMINI.MD](GEMINI.MD) referencing `.ai/agents.md` and all `.ai/` manifests.
+- [x] Executed specification pressure-testing against `tasks/` blueprints and enhanced `.ai/` and `GEMINI.MD` with operational runbooks, production alert rules, PgBouncer pooling rules, outbox event schemas, and concrete test targets.
+- [x] Hardened [prompts/phase-1-content-addressing-and-data-plane.md](prompts/phase-1-content-addressing-and-data-plane.md) with relational junction bindings (`manifest_chunk_bindings`), Unicode NFC normalization pipeline, `Makefile`/`buf` codegen tooling, and `SectionPatch` state machine test coverage.
+- [x] Initialized Go module (`github.com/Gemejime/rag-chunk-lifecycle-service`) with production dependencies (`pgx/v5`, `protobuf`, `grpc`, `uuid`, `text`).
+- [x] Created development tooling: `Makefile`, `buf.yaml`, `buf.gen.yaml`, and GitHub Actions CI workflow (`.github/workflows/ci.yml`).
+- [x] Synchronized Doc API contracts (Protobuf v3 `types.proto`, `chunk_service.proto`, generated Go stubs `types.pb.go`, `chunk_service.pb.go`, `chunk_service_grpc.pb.go`, and OpenAPI 3.0.3 `api/openapi/openapi.yaml`).
+- [x] Implemented Hexagonal Domain Layer:
+  - Entities (`DocumentManifest`, `ChunkNode`, `ParentContainer`, `SectionPatch`) and strongly-typed sentinel domain errors (`internal/domain/entity/errors.go`).
+  - Content Hasher (`internal/domain/compiler/content_hasher.go`) adhering to ADR-001 (Unicode NFC normalization, CRLF to LF, whitespace collapsing, 8-byte big-endian framing).
+  - Domain Repository port contracts (`ManifestRepository`, `ChunkRepository`, `PatchRepository`, `OutboxRepository`).
+- [x] Implemented Relational Storage & Staging Infrastructure:
+  - PostgreSQL 16 schema migrations (`000001_initial_schema.up.sql` and `000001_initial_schema.down.sql`) with unlogged staging, monotonic version manifests, junction bindings, and transactional outbox.
+  - PgBouncer-compatible connection pool adapter (`pool.go`) enforcing `DefaultQueryExecMode = QueryExecModeExec` and credential redaction.
+  - High-velocity staging adapter (`batch_writer.go`) leveraging transactional `COPY` and atomic promotion.
+  - PostgreSQL Manifest repository (`manifest_repo.go`) and Outbox repository (`outbox_repo.go`).
+- [x] Built comprehensive unit test suites (`test/unit/content_hasher_test.go` and `test/unit/domain_entity_test.go`) validating 100% test pass rate.
+- [x] **Phase 2 Implementation Complete**:
+  - Added production dependencies: `github.com/redis/go-redis/v9`, `golang.org/x/sync`, and `github.com/alicebob/miniredis/v2`.
+  - Hardened `ParentContainer` entity token validation (resolving small tail remainder windows < 800 tokens at section boundary/EOF while preserving 1,500 token upper ceiling).
+  - Implemented `ContextCompiler` (`internal/domain/compiler/context_compiler.go`) grouping 100–300 token child chunks into 800–1,500 token parent containers with section boundary splitting and deterministic ADR-001 Parent ID hashing.
+  - Defined `ParentRepository` and `ParentCache` domain port contracts.
+  - Implemented PostgreSQL 16 `PostgresParentRepository` adapter (`internal/infrastructure/persistence/postgres/parent_repo.go`).
+  - Implemented Redis 7.2 UniversalClient `RedisParentCache` adapter (`internal/infrastructure/cache/redis/parent_cache.go`) with versioned keys (`chunk:parent:{tenant_id}:{parent_id}:v{version}`).
+  - Implemented `ApplySectionPatchHandler` (`internal/application/command/apply_section_patch.go`) with optimistic concurrency checks (`ErrStaleBaseHash`), child chunk slicing, parent context recompilation, atomic manifest version advance ($v_{n+1}$), and `ChunkRevectorizationRequired` transactional outbox event emission.
+  - Implemented `GetParentContainerHandler` (`internal/application/query/get_parent_container.go`) with sub-8ms Redis fast path and `singleflight.Group` stampede protection.
+  - Synchronized Doc API contracts (`ApplySectionPatch` RPC, request/response schemas in Protobuf and OpenAPI 3.0.3).
+  - Built comprehensive unit test suites (`context_compiler_test.go`, `parent_cache_test.go`, `get_parent_container_test.go`, `apply_section_patch_test.go`) achieving 100% pass rate (24 unit tests).
+- [x] **Phase 3 Implementation Complete**:
+  - Implemented schema migration `000002_add_quarantine_conflict_fields.up.sql` and `.down.sql` with keyset indexes.
+  - Enhanced `entity.SectionPatch` with upstream conflict fields (`upstreamContent`, `upstreamContentHash`, `conflictDetectedAt`) and state machine methods (`Quarantine`, `Reactivate`, `Supersede`).
+  - Implemented `SectionReconciler` (`internal/domain/reconciliation/section_reconciler.go`) adhering to ADR-002 pragmatic section-level CDC invalidation.
+  - Implemented `PostgresPatchRepository` (`internal/infrastructure/persistence/postgres/patch_repo.go`) with multi-tenant filtering and URL-safe Base64 keyset cursor pagination (`(created_at, patch_id) < ($2, $3)`).
+  - Implemented Prometheus telemetry (`internal/infrastructure/telemetry/metrics.go`) exposing all 5 mandated metrics on a dedicated registry.
+  - Synchronized Doc API (`api/openapi/openapi.yaml`) with `/healthz`, `/readyz`, and `/metrics`.
+  - Implemented application commands & queries:
+    - `ReconcileCDCUpdateHandler` with outbox alert dispatch.
+    - `AcceptUpstreamCDCHandler` and `ReapplyOverrideHandler` for Runbook 1 quarantine resolution.
+    - `IngestChunkBatchHandler` with child chunk token bounds validation [100, 300].
+    - `ListQuarantinedPatchesHandler` with keyset cursor pagination.
+  - Implemented gRPC transport:
+    - Streaming ingress `BatchIngestChunks` with token enforcement and backpressure (`codes.ResourceExhausted`).
+    - Interceptors: `Recovery` (panic safety), `Tenant` (multi-tenant boundary validation), `Logging` (Secured Logging without raw text payload leakage).
+    - Unary RPC handlers for `GetParentContainer`, `ReconcileCDCUpdate`, `ApplySectionPatch`.
+  - Implemented REST HTTP Router and `QuarantineHandler` mounting all OpenAPI routes, health probes, and conflict resolution endpoints.
+  - Implemented decoupled binaries adhering to ADR-003:
+    - `cmd/chunk-server/main.go` running concurrent gRPC (50051) and REST HTTP (8080) servers with graceful shutdown.
+    - `cmd/reconciliation-worker/main.go` CLI supporting `--task=run-reconciler`, `--task=warm-parent-cache`, and `--task=healthcheck`.
+  - Built comprehensive unit test suites (`reconcile_cdc_update_test.go`, `resolve_quarantine_test.go`, `grpc_chunk_handler_test.go`, `http_quarantine_handler_test.go`, `patch_repo_test.go`, `section_reconciler_test.go`) achieving 100% pass rate across 38 tests.
+- [x] **Phase 4 Implementation Complete**:
+  - Zero-Trust Distroless Dockerfile (`deployments/docker/Dockerfile`) & `.dockerignore`: Multi-stage build targeting `gcr.io/distroless/static:nonroot` with UID 65532:65532 and zero shell (with read-only root filesystems enforced via Helm container security contexts through `.Values.securityContext`), packaging statically linked `chunk-server` and `reconciliation-worker`.
+  - Production Helm Chart Architecture (`deployments/helm/`):
+    - `Chart.yaml`, `values.yaml`, `_helpers.tpl`, `configmap.yaml`, `secret.yaml`, `serviceaccount.yaml`.
+    - Decoupled deployments: `deployment-chunk-server.yaml` and `deployment-reconciliation-worker.yaml`.
+    - Routing services: `service-chunk-server.yaml`, `service-chunk-server-stable.yaml`, `service-chunk-server-canary.yaml`.
+    - Availability & Scaling: Multi-AZ `podAntiAffinity`, `poddisruptionbudget.yaml` (`minAvailable: 2`), `hpa.yaml` (65% CPU target).
+    - Production Alerts: `prometheusrule.yaml` defining alerts for Quarantine Spike (>2%), P99 Compilation Latency (>200ms), and High Memory Pressure (>80% of 1.5GiB).
+  - Declarative GitOps ArgoCD & Canary Strategy (`deployments/argocd/`):
+    - `application-chunk-server.yaml` and `application-reconciliation-worker.yaml` with automated drift detection (`selfHeal: true`, `prune: true`).
+    - Multi-environment `applicationset.yaml` covering `dev`, `staging`, and `production`.
+    - Argo Rollouts Canary `rollout-chunk-server.yaml` with 10% -> 25% -> 100% traffic progression.
+    - Automated metric analysis `analysistemplate.yaml` verifying latency (P99 <= 120ms) and quarantine budget (<= 2%).
+  - Pure-Go Apache Arrow Flight Columnar Receiver Adapter (`internal/infrastructure/flight/flight_receiver.go`):
+    - Pure-Go implementation (`CGO_ENABLED=0` compatible) decoding columnar RecordBatch schemas (`tenant_id`, `document_id`, `normalized_content`, `structural_path`, `token_count`, `sequence_index`).
+    - Enforces child token bounds [100, 300], calculates deterministic ADR-001 Chunk IDs, and promotes batches via `command.IngestChunkBatchHandler`.
+    - Enforces stream backpressure limits returning `ErrBackpressureSaturated`.
+    - Comprehensive unit test suite (`test/unit/flight_receiver_test.go`).
+  - Performance, Scale & Stress Benchmark Suite (`test/performance/load_test.go` with build tag `//go:build performance`):
+    - 25,000 Chunks/Sec Ingestion Benchmark.
+    - Sub-8ms Decoupled Read Path Verification against `RedisParentCache` under 2,000 RPS.
+    - Ingestion Backpressure & Saturation Verification (`codes.ResourceExhausted`).
+    - Memory & Allocation Bounds Profiling ensuring RSS remains stably below 1.2 GiB.
+  - CI Pipeline & Tooling Enhancement:
+    - Updated `Makefile` with `docker-build`, `helm-lint`, and `test-performance` targets.
+    - Enhanced `.github/workflows/ci.yml` with Helm linting, template validation, and container builds.
+  - Doc API & Spec Synchronization:
+    - Updated `api/openapi/openapi.yaml` with Arrow Flight schemas (`ColumnarRecordBatchModel`, `FlightIngestResultModel`).
+    - Updated `.ai/doc-api.md` with Apache Arrow Flight columnar ingress standards.
+- [x] **Code Review Feedback Resolution**:
+  - Pinned `golangci-lint` to `v1.64.8` (built with Go 1.26+) in `.github/workflows/ci.yml` while preserving `go-version-file: 'go.mod'`.
+  - Replaced error substring matching in `BatchIngestChunks` (`internal/transport/grpc/chunk_handler.go`) with `errors.Is` against dedicated sentinel `command.ErrPoolSaturation`.
+  - Defined `command.ErrPoolSaturation` and `command.IsPoolSaturated` in `internal/application/command/ingest_chunk_batch.go` to confirm pool saturation without treating standalone `context.DeadlineExceeded` as saturation.
+  - Added unit test cases in `test/unit/grpc_chunk_handler_test.go` verifying saturation error classification, deadline exceeded isolation, and generic error handling.
+
+---
+
+## Architecture Decisions (ADRs)
+- **ADR-001**: Content-Addressable Chunk Identities — All chunk IDs derive from $\text{SHA256}$ over 8-byte big-endian length-prefixed UTF-8 fields: $\text{len}_{8\text{BE}}(\text{TenantID}) \parallel \text{TenantID} \parallel \text{len}_{8\text{BE}}(\text{NormalizedContent}) \parallel \text{NormalizedContent} \parallel \text{len}_{8\text{BE}}(\text{StructuralPath}) \parallel \text{StructuralPath}$.
+- **ADR-002**: Pragmatic Section-Key Invalidation — Flag `SECTION_STALE_QUARANTINE` when upstream CDC mutates patched sections, avoiding fragile 3-way AST diffs.
+- **ADR-003**: Process Separation — Decouple `chunk-server` from `reconciliation-worker` to isolate network thread pools and preserve memory budgets.
+- **ADR-004**: Decoupled Read Path — Context assembly queries read exclusively from Redis 7.2 Cluster ($P99 \le 8\text{ms}$), isolated from write lock queues.
