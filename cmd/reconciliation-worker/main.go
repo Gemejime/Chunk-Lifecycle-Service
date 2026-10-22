@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -21,7 +22,11 @@ import (
 func main() {
 	// Automatically load .env file if present (existing environment variables take precedence)
 	loadedEnv := false
-	if err := godotenv.Load(); err == nil {
+	if err := godotenv.Load(); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("error loading .env file", slog.String("error", err.Error()))
+		}
+	} else {
 		loadedEnv = true
 	}
 

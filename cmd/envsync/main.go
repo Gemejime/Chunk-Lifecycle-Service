@@ -40,8 +40,11 @@ func main() {
 }
 
 func runSync(opts SyncOptions) error {
-	// If the env file does not exist, log info and exit cleanly unless check-only is requested.
+	// If the env file does not exist, fail if check-only is requested, otherwise log info and exit cleanly.
 	if _, err := os.Stat(opts.EnvPath); os.IsNotExist(err) {
+		if opts.CheckOnly {
+			return fmt.Errorf("environment file %s does not exist", opts.EnvPath)
+		}
 		fmt.Printf("[envsync] %s does not exist; skipping sync.\n", opts.EnvPath)
 		return nil
 	}
@@ -114,6 +117,11 @@ func SyncContent(valuesContent string, envMap map[string]string) (string, bool, 
 
 		indent := reIndent.FindString(trimmed)
 
+		// Only match direct children (exactly 2 spaces indentation) and ignore blank/comment lines or nested blocks
+		if len(indent) != 2 || strings.TrimSpace(trimmed) == "" || strings.HasPrefix(strings.TrimSpace(trimmed), "#") {
+			continue
+		}
+
 		switch currentSection {
 		case "env":
 			if val, ok := envMap["HTTP_PORT"]; ok && strings.HasPrefix(strings.TrimSpace(trimmed), "httpPort:") {
@@ -139,13 +147,8 @@ func SyncContent(valuesContent string, envMap map[string]string) (string, bool, 
 			}
 
 		case "config":
-			if val, ok := envMap["DATABASE_URL"]; ok && strings.HasPrefix(strings.TrimSpace(trimmed), "databaseUrl:") {
-				targetLine := fmt.Sprintf(`%sdatabaseUrl: %q`, indent, val)
-				if trimmed != targetLine {
-					changes = append(changes, fmt.Sprintf("config.databaseUrl: %s -> %q", strings.TrimSpace(trimmed), val))
-					lines[i] = targetLine
-				}
-			}
+			// DATABASE_URL is excluded from synchronization to avoid committing database credentials into Helm values;
+			// credentials are provided via deployment secrets.
 			if val, ok := envMap["REDIS_ADDR"]; ok && strings.HasPrefix(strings.TrimSpace(trimmed), "redisAddr:") {
 				targetLine := fmt.Sprintf(`%sredisAddr: %q`, indent, val)
 				if trimmed != targetLine {

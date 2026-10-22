@@ -1,8 +1,13 @@
 package unit
 
 import (
+	"errors"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/redis/go-redis/v9"
 
 	redisCache "github.com/Gemejime/rag-chunk-lifecycle-service/internal/infrastructure/cache/redis"
 )
@@ -74,3 +79,61 @@ func TestRedisClient_UpstashAutoTLS(t *testing.T) {
 	}
 	defer func() { _ = client.Close() }()
 }
+
+func TestRedisClient_InvalidScheme(t *testing.T) {
+	opts := redisCache.ClientOptions{
+		URL: "http://invalid-scheme.example.com:6379",
+	}
+
+	_, err := redisCache.NewClient(opts)
+	if err == nil {
+		t.Fatalf("expected error for unsupported redis URL scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported redis url scheme") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestRedisClient_ParseURLErrorSanitized(t *testing.T) {
+	opts := redisCache.ClientOptions{
+		URL: "redis://myuser:secretpassword@invalidhost:notaport/0",
+	}
+
+	_, err := redisCache.NewClient(opts)
+	if err == nil {
+		t.Fatalf("expected error for malformed redis URL, got nil")
+	}
+
+	// Credentials must not be exposed in error string
+	if strings.Contains(err.Error(), "secretpassword") {
+		t.Fatalf("expected password to not be present in error message, got: %v", err)
+	}
+
+	// *url.Error containing full URL must not be wrapped
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		t.Fatalf("expected error not to wrap *url.Error, got: %v", err)
+	}
+}
+
+func TestRedisClient_ExplicitTLSWithRedisScheme(t *testing.T) {
+	opts := redisCache.ClientOptions{
+		URL:    "redis://localhost:6379/0",
+		UseTLS: true,
+	}
+
+	client, err := redisCache.NewClient(opts)
+	if err != nil {
+		t.Fatalf("failed to create client with explicit TLS on redis:// scheme: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	rClient, ok := client.(*redis.Client)
+	if !ok {
+		t.Fatalf("expected *redis.Client, got %T", client)
+	}
+	if rClient.Options().TLSConfig == nil {
+		t.Fatalf("expected TLSConfig to be configured when UseTLS is true")
+	}
+}
+

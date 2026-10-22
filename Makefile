@@ -22,7 +22,7 @@ sync-env:
 	go run ./cmd/envsync
 
 check-env:
-	go run ./cmd/envsync -check
+	@if [ -f .env ]; then go run ./cmd/envsync -check; else echo "[check-env] .env file not found; skipping check."; fi
 
 docker-build:
 	docker build -t rag-chunk-lifecycle-service:latest -f deployments/docker/Dockerfile .
@@ -34,4 +34,4 @@ helm-lint:
 vulncheck:
 	govulncheck ./...
 
-verify: fmt lint test sync-env helm-lint
+verify: fmt lint test check-env helm-lint

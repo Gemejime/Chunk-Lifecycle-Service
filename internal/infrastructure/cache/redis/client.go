@@ -2,7 +2,9 @@ package redis
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -55,6 +57,10 @@ func ClientOptionsFromEnv() ClientOptions {
 // - Host:port addresses with optional password and TLS (including Upstash auto-detection)
 // - Default fallback to localhost:6379
 func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
+	if opts.URL != "" && !strings.HasPrefix(opts.URL, "redis://") && !strings.HasPrefix(opts.URL, "rediss://") {
+		return nil, fmt.Errorf("unsupported redis url scheme: expected redis:// or rediss://")
+	}
+
 	target := opts.URL
 	if target == "" {
 		target = opts.Addr
@@ -64,7 +70,27 @@ func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
 	if strings.HasPrefix(target, "redis://") || strings.HasPrefix(target, "rediss://") {
 		parsedOpts, err := redis.ParseURL(target)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse redis url: %w", err)
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				return nil, fmt.Errorf("failed to parse redis url: %w", urlErr.Err)
+			}
+			sanitizedMsg := err.Error()
+			if target != "" {
+				sanitizedMsg = strings.ReplaceAll(sanitizedMsg, target, SanitizeRedisAddr(target))
+			}
+			return nil, fmt.Errorf("failed to parse redis url: %s", sanitizedMsg)
+		}
+		if opts.UseTLS && parsedOpts.TLSConfig == nil {
+			host := parsedOpts.Addr
+			if h, _, err := net.SplitHostPort(parsedOpts.Addr); err == nil {
+				host = h
+			} else if idx := strings.Index(host, ":"); idx != -1 {
+				host = host[:idx]
+			}
+			parsedOpts.TLSConfig = &tls.Config{
+				ServerName: host,
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 		return redis.NewClient(parsedOpts), nil
 	}

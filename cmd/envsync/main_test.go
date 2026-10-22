@@ -57,7 +57,6 @@ secrets:
 		`httpPort: "9090"`,
 		`grpcPort: "50052"`,
 		`logLevel: "debug"`,
-		`databaseUrl: "postgres://prod_user:prod_pass@prod-db:5432/chunks?sslmode=require"`,
 		`redisAddr: "prod-redis:6379"`,
 	}
 
@@ -67,8 +66,13 @@ secrets:
 		}
 	}
 
-	if len(changes) != 8 {
-		t.Errorf("expected 8 changes, got %d: %v", len(changes), changes)
+	// Verify DATABASE_URL credentials are not copied to values.yaml
+	if strings.Contains(newValues, "prod_user:prod_pass") {
+		t.Errorf("expected DATABASE_URL credentials to be omitted from values.yaml")
+	}
+
+	if len(changes) != 7 {
+		t.Errorf("expected 7 changes, got %d: %v", len(changes), changes)
 	}
 
 	// Verify idempotency: running again should result in 0 changes
@@ -91,3 +95,59 @@ secrets:
 		t.Errorf("expected secrets block to be preserved")
 	}
 }
+
+func TestSyncContent_NestedMappingIgnored(t *testing.T) {
+	yamlWithNested := `service:
+  type: ClusterIP
+  grpcPort: 50051
+  httpPort: 8080
+  customSubMap:
+    httpPort: 9999
+    grpcPort: 9998
+`
+	envMap := map[string]string{
+		"HTTP_PORT": "8081",
+		"GRPC_PORT": "50052",
+	}
+
+	newValues, changed, changes, err := SyncContent(yamlWithNested, envMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changes, got none")
+	}
+	if len(changes) != 2 {
+		t.Fatalf("expected exactly 2 changes for direct children, got %d: %v", len(changes), changes)
+	}
+
+	// Nested submap keys should remain unchanged
+	if !strings.Contains(newValues, "    httpPort: 9999") || !strings.Contains(newValues, "    grpcPort: 9998") {
+		t.Errorf("nested submap keys were unexpectedly modified:\n%s", newValues)
+	}
+}
+
+func TestRunSync_MissingEnvFile(t *testing.T) {
+	missingPath := "non_existent_env_file.tmp"
+
+	// Normal sync should succeed and skip
+	err := runSync(SyncOptions{
+		EnvPath:    missingPath,
+		ValuesPath: "values.yaml",
+		CheckOnly:  false,
+	})
+	if err != nil {
+		t.Errorf("expected normal sync to succeed on missing env file, got: %v", err)
+	}
+
+	// CheckOnly sync should return an error
+	err = runSync(SyncOptions{
+		EnvPath:    missingPath,
+		ValuesPath: "values.yaml",
+		CheckOnly:  true,
+	})
+	if err == nil {
+		t.Errorf("expected CheckOnly to fail on missing env file, got nil")
+	}
+}
+
