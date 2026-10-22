@@ -12,13 +12,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/redis/go-redis/v9"
+	"github.com/joho/godotenv"
 
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/entity"
 	redisCache "github.com/Gemejime/rag-chunk-lifecycle-service/internal/infrastructure/cache/redis"
 )
 
 func main() {
+	// Automatically load .env file if present (existing environment variables take precedence)
+	loadedEnv := false
+	if err := godotenv.Load(); err == nil {
+		loadedEnv = true
+	}
+
 	logLevel := slog.LevelInfo
 	if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
 		switch strings.ToLower(envLevel) {
@@ -37,6 +43,10 @@ func main() {
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
+
+	if loadedEnv {
+		slog.Info("loaded configuration from .env file")
+	}
 
 	task := flag.String("task", "run-reconciler", "Task to execute: 'run-reconciler' or 'warm-parent-cache'")
 	tenantID := flag.String("tenant-id", "", "Tenant identifier for cache backfill")
@@ -69,9 +79,15 @@ func main() {
 		slog.String("task", *task),
 	)
 
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	redisOpts := redisCache.ClientOptionsFromEnv()
+	rdb, err := redisCache.NewClient(redisOpts)
+	if err != nil {
+		slog.Error("could not initialize redis client; exiting startup", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 	defer func() { _ = rdb.Close() }()
 	cache := redisCache.NewRedisParentCache(rdb)
+	slog.Info("connected to redis client", slog.String("target", redisCache.SanitizeRedisTarget(redisOpts)))
 
 	switch *task {
 	case "warm-parent-cache":

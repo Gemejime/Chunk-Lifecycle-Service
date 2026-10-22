@@ -103,7 +103,7 @@ env:
 
 config:
   # Injected via external secret; ensure connection string enforces TLS with sslmode=require
-  databaseUrl: ""
+  databaseUrl: "postgres://chunk_user:REPLACE_WITH_PRODUCTION_PASSWORD@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
   redisAddr: "redis-cluster.cache.svc.cluster.local:6379"
 
 secrets:

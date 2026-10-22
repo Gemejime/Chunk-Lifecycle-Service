@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
+	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
 
 	chunkv1 "github.com/Gemejime/rag-chunk-lifecycle-service/api/proto/v1"
@@ -27,6 +27,12 @@ import (
 )
 
 func main() {
+	// Automatically load .env file if present (existing environment variables take precedence)
+	loadedEnv := false
+	if err := godotenv.Load(); err == nil {
+		loadedEnv = true
+	}
+
 	// Configure structured JSON logging
 	logLevel := slog.LevelInfo
 	if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
@@ -46,6 +52,10 @@ func main() {
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger)
+
+	if loadedEnv {
+		slog.Info("loaded configuration from .env file")
+	}
 
 	slog.Info("initializing rag-chunk-lifecycle-service ingress server")
 
@@ -86,13 +96,15 @@ func main() {
 	slog.Info("connected to postgres pool")
 
 	// 3. Initialize Redis Client & ParentCache Adapter
-	var rdb redis.UniversalClient
-	var parentCache *redisCache.RedisParentCache
-	rdb = redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-	})
+	redisOpts := redisCache.ClientOptionsFromEnv()
+	rdb, err := redisCache.NewClient(redisOpts)
+	if err != nil {
+		slog.Error("could not initialize redis client; exiting startup", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 	defer func() { _ = rdb.Close() }()
-	parentCache = redisCache.NewRedisParentCache(rdb)
+	parentCache := redisCache.NewRedisParentCache(rdb)
+	slog.Info("connected to redis client", slog.String("target", redisCache.SanitizeRedisTarget(redisOpts)))
 
 	// 4. Repositories & Domain Adapters
 	var parentRepo *postgres.PostgresParentRepository
