@@ -24,8 +24,9 @@ type ClientOptions struct {
 // Priority:
 // 1. REDIS_URL if non-empty (e.g., "rediss://default:token@endpoint.upstash.io:6379" or "redis://...")
 // 2. REDIS_ADDR:
-//    - If REDIS_ADDR starts with "redis://" or "rediss://", it is treated as a connection URL.
-//    - Otherwise, treated as host:port (e.g., "endpoint.upstash.io:6379" or "localhost:6379").
+//   - If REDIS_ADDR starts with "redis://" or "rediss://", it is treated as a connection URL.
+//   - Otherwise, treated as host:port (e.g., "endpoint.upstash.io:6379" or "localhost:6379").
+//
 // 3. REDIS_USERNAME / REDIS_PASSWORD (optional credentials if host:port is used)
 // 4. REDIS_TLS (optional bool "true"/"1", or automatically enabled if host ends with ".upstash.io")
 func ClientOptionsFromEnv() ClientOptions {
