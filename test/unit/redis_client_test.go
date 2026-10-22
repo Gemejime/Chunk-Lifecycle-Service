@@ -136,4 +136,3 @@ func TestRedisClient_ExplicitTLSWithRedisScheme(t *testing.T) {
 		t.Fatalf("expected TLSConfig to be configured when UseTLS is true")
 	}
 }
-

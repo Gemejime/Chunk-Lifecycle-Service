@@ -150,4 +150,3 @@ func TestRunSync_MissingEnvFile(t *testing.T) {
 		t.Errorf("expected CheckOnly to fail on missing env file, got nil")
 	}
 }
-
