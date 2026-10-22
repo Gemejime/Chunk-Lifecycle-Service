@@ -64,12 +64,6 @@ func main() {
 	if pgConnStr == "" {
 		pgConnStr = "postgres://postgres:postgres@localhost:5432/chunk_lifecycle?sslmode=disable"
 	}
-
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
-
 	httpPort := os.Getenv("HTTP_PORT")
 	if httpPort == "" {
 		httpPort = "8080"

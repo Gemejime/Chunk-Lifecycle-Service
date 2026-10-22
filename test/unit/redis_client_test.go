@@ -8,11 +8,11 @@ import (
 )
 
 func TestRedisClient_OptionsFromEnv_Default(t *testing.T) {
-	os.Unsetenv("REDIS_URL")
-	os.Unsetenv("REDIS_ADDR")
-	os.Unsetenv("REDIS_USERNAME")
-	os.Unsetenv("REDIS_PASSWORD")
-	os.Unsetenv("REDIS_TLS")
+	_ = os.Unsetenv("REDIS_URL")
+	_ = os.Unsetenv("REDIS_ADDR")
+	_ = os.Unsetenv("REDIS_USERNAME")
+	_ = os.Unsetenv("REDIS_PASSWORD")
+	_ = os.Unsetenv("REDIS_TLS")
 
 	opts := redisCache.ClientOptionsFromEnv()
 	if opts.Addr != "" || opts.URL != "" || opts.Password != "" || opts.UseTLS {
@@ -23,7 +23,7 @@ func TestRedisClient_OptionsFromEnv_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected NewClient to succeed with defaults, got: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 }
 
 func TestRedisClient_URL_Rediss_Upstash(t *testing.T) {
@@ -37,7 +37,7 @@ func TestRedisClient_URL_Rediss_Upstash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create redis client from rediss URL: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	sanitized := redisCache.SanitizeRedisAddr(upstashURL)
 	if sanitized == upstashURL {
@@ -58,7 +58,7 @@ func TestRedisClient_AddrWithScheme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse Addr containing rediss scheme: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 }
 
 func TestRedisClient_UpstashAutoTLS(t *testing.T) {
@@ -72,5 +72,5 @@ func TestRedisClient_UpstashAutoTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client for upstash host: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 }

@@ -59,11 +59,6 @@ func main() {
 		pgConnStr = "postgres://postgres:postgres@localhost:5432/chunk_lifecycle?sslmode=disable"
 	}
 
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
