@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,13 +13,23 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/redis/go-redis/v9"
+	"github.com/joho/godotenv"
 
 	"github.com/Gemejime/rag-chunk-lifecycle-service/internal/domain/entity"
 	redisCache "github.com/Gemejime/rag-chunk-lifecycle-service/internal/infrastructure/cache/redis"
 )
 
 func main() {
+	// Automatically load .env file if present (existing environment variables take precedence)
+	loadedEnv := false
+	if err := godotenv.Load(); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("error loading .env file", slog.String("error", err.Error()))
+		}
+	} else {
+		loadedEnv = true
+	}
+
 	logLevel := slog.LevelInfo
 	if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
 		switch strings.ToLower(envLevel) {
@@ -38,6 +49,10 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	if loadedEnv {
+		slog.Info("loaded configuration from .env file")
+	}
+
 	task := flag.String("task", "run-reconciler", "Task to execute: 'run-reconciler' or 'warm-parent-cache'")
 	tenantID := flag.String("tenant-id", "", "Tenant identifier for cache backfill")
 	documentID := flag.String("document-id", "", "Document identifier for cache backfill")
@@ -47,11 +62,6 @@ func main() {
 	pgConnStr := os.Getenv("DATABASE_URL")
 	if pgConnStr == "" {
 		pgConnStr = "postgres://postgres:postgres@localhost:5432/chunk_lifecycle?sslmode=disable"
-	}
-
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,9 +79,15 @@ func main() {
 		slog.String("task", *task),
 	)
 
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	redisOpts := redisCache.ClientOptionsFromEnv()
+	rdb, err := redisCache.NewClient(redisOpts)
+	if err != nil {
+		slog.Error("could not initialize redis client; exiting startup", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 	defer func() { _ = rdb.Close() }()
 	cache := redisCache.NewRedisParentCache(rdb)
+	slog.Info("connected to redis client", slog.String("target", redisCache.SanitizeRedisTarget(redisOpts)))
 
 	switch *task {
 	case "warm-parent-cache":

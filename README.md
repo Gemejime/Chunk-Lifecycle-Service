@@ -238,7 +238,7 @@ The service requires PostgreSQL 16+ and runs forward-only migrations from `inter
 
 ## Configuration & Environment Variables
 
-Copy `.env.example` to `.env` or inject configuration via environment variables:
+Copy `.env.example` to `.env` (the service automatically loads `.env` at startup if present) or inject configuration via environment variables:
 
 | Variable | Default Value | Description |
 | :--- | :--- | :--- |
@@ -370,6 +370,16 @@ make verify
 Build a minimal, zero-trust distroless image with zero shell environment and non-root execution (`UID 65532`):
 ```bash
 make docker-build
+```
+
+### Environment & Helm Synchronization
+Synchronize configurations between local/production `.env` files and `deployments/helm/values.yaml` (consumed by Helm & ArgoCD):
+```bash
+# Synchronize .env variables directly into Helm values.yaml
+make sync-env
+
+# Check whether Helm values.yaml matches .env (CI validation)
+make check-env
 ```
 
 ### Helm Chart Deployment
