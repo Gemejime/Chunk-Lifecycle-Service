@@ -115,6 +115,12 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Updated developer documentation header in `.env.example` designating `.env.prod` as single source of truth for deployments.
   - Created automated test suite (`test/test_sync_env_to_deployments.py`) verifying drift detection, synchronization idempotency, and credential filtering.
 
+- [x] **CI/CD Secret Injection & Security Hardening**:
+  - Implemented CI/CD secret injection workflow (`.github/workflows/deploy.yml`) supporting GitHub Actions environments (`staging`, `production`), secret log masking (`::add-mask::`), dynamic Kubernetes Secret synthesis (`rag-chunk-lifecycle-service-secret`), and Helm deployment overrides.
+  - Enhanced CI pipeline (`.github/workflows/ci.yml`) with automated zero-drift configuration verification and Python test execution gates.
+  - Upgraded Helm secret template (`deployments/helm/templates/secret.yaml`) to dynamically inject `DATABASE_URL`, `REDIS_PASSWORD`, and `REDIS_URL`.
+  - Authoritative enterprise secret manual created: [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) detailing architecture, secrets classification matrix, CI/CD injection pipelines, External Secrets Operator (ESO) GitOps patterns, and zero-downtime credential rotation runbooks.
+
 ---
 
 ## Architecture Decisions (ADRs)
