@@ -158,3 +158,4 @@ jobs:
           NAMESPACE="rag-chunk-lifecycle"
           kubectl rollout status deployment/rag-chunk-lifecycle-service-chunk-server -n ${NAMESPACE} --timeout=120s
           kubectl rollout status deployment/rag-chunk-lifecycle-service-reconciliation-worker -n ${NAMESPACE} --timeout=120s
+
