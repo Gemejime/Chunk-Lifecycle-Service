@@ -9,16 +9,26 @@ from pathlib import Path
 import unittest
 
 # Import the script functions
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from sync_env_to_deployments import (
-    is_sensitive,
-    parse_env_file,
-    get_syncable_env,
-    check_drift,
-    sync_env,
-)
+try:
+    from scripts.sync_env_to_deployments import (
+        check_drift,
+        get_syncable_env,
+        is_sensitive,
+        parse_env_file,
+        sync_env,
+    )
+except ImportError:
+    from sync_env_to_deployments import (
+        check_drift,
+        get_syncable_env,
+        is_sensitive,
+        parse_env_file,
+        sync_env,
+    )
 
 
 class TestSyncEnvToDeployments(unittest.TestCase):
