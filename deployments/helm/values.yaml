@@ -111,6 +111,7 @@ config:
 
 secrets:
   databasePassword: ""
+  redisPassword: ""
 
 # Canary progressive delivery configuration
 canary:

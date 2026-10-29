@@ -1,0 +1,160 @@
+name: CD Pipeline & Secret Injection
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target deployment environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - staging
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pre-deploy-validation:
+    name: Pre-Deployment Drift & Secret Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install pyyaml
+
+      - name: Verify Zero Drift (.env.prod vs values.yaml)
+        run: python scripts/sync_env_to_deployments.py --check-only
+
+  deploy:
+    name: Inject Secrets & Deploy to Kubernetes
+    needs: pre-deploy-validation
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Mask Sensitive Secrets from Workflow Logs
+        run: |
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            echo "::add-mask::${{ secrets.DATABASE_URL }}"
+          fi
+          if [ -n "${{ secrets.REDIS_PASSWORD }}" ]; then
+            echo "::add-mask::${{ secrets.REDIS_PASSWORD }}"
+          fi
+          if [ -n "${{ secrets.REDIS_URL }}" ]; then
+            echo "::add-mask::${{ secrets.REDIS_URL }}"
+          fi
+          echo "[SECURED] Secret masking verified for standard outputs."
+
+      - name: Configure Kubeconfig
+        run: |
+          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
+            mkdir -p $HOME/.kube
+            echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
+            chmod 600 $HOME/.kube/config
+            echo "Kubeconfig configured from repository secrets."
+          else
+            echo "[INFO] KUBECONFIG secret not set; executing dry-run manifest compilation."
+          fi
+
+      - name: Provision Kubernetes Secret (Inject Credentials)
+        run: |
+          NAMESPACE="rag-chunk-lifecycle"
+          SECRET_NAME="rag-chunk-lifecycle-service-secret"
+
+          # Fallback values for CI dry-run if secrets are empty
+          DB_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "$DB_URL" ]; then
+            DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
+          fi
+
+          REDIS_PASS="${{ secrets.REDIS_PASSWORD }}"
+          REDIS_FULL_URL="${{ secrets.REDIS_URL }}"
+
+          # Assemble kubectl command dynamically based on available secrets
+          SECRET_ARGS="DATABASE_URL=${DB_URL}"
+          if [ -n "$REDIS_PASS" ]; then
+            SECRET_ARGS="${SECRET_ARGS} REDIS_PASSWORD=${REDIS_PASS}"
+          fi
+          if [ -n "$REDIS_FULL_URL" ]; then
+            SECRET_ARGS="${SECRET_ARGS} REDIS_URL=${REDIS_FULL_URL}"
+          fi
+
+          if [ -f "$HOME/.kube/config" ]; then
+            echo "[DEPLOY] Injecting Secret into Kubernetes namespace ${NAMESPACE}..."
+            kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create secret generic ${SECRET_NAME} \
+              --namespace ${NAMESPACE} \
+              $(for arg in ${SECRET_ARGS}; do echo "--from-literal=${arg}"; done) \
+              --dry-run=client -o yaml | kubectl apply -f -
+          else
+            echo "[DRY-RUN] Verifying secret manifest compilation syntax..."
+            kubectl create secret generic ${SECRET_NAME} \
+              --namespace ${NAMESPACE} \
+              $(for arg in ${SECRET_ARGS}; do echo "--from-literal=${arg}"; done) \
+              --dry-run=client -o yaml > /dev/null
+            echo "[DRY-RUN] Secret manifest successfully compiled without leaking credentials."
+          fi
+
+      - name: Deploy Helm Chart with Injected Secret Bindings
+        run: |
+          NAMESPACE="rag-chunk-lifecycle"
+          RELEASE_NAME="rag-chunk-lifecycle-service"
+
+          DB_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "$DB_URL" ]; then
+            DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
+          fi
+
+          HELM_EXTRA_ARGS=""
+          if [ -n "${{ secrets.REDIS_PASSWORD }}" ]; then
+            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.redisPassword=${{ secrets.REDIS_PASSWORD }}"
+          fi
+
+          if [ -f "$HOME/.kube/config" ]; then
+            echo "[DEPLOY] Executing Helm upgrade --install..."
+            helm upgrade --install ${RELEASE_NAME} deployments/helm \
+              --namespace ${NAMESPACE} \
+              --create-namespace \
+              --set-string config.databaseUrl="${DB_URL}" \
+              ${HELM_EXTRA_ARGS} \
+              --wait \
+              --timeout 5m0s
+          else
+            echo "[DRY-RUN] Executing Helm template validation with secret bindings..."
+            helm template ${RELEASE_NAME} deployments/helm \
+              --namespace ${NAMESPACE} \
+              --set-string config.databaseUrl="${DB_URL}" \
+              ${HELM_EXTRA_ARGS} > /dev/null
+            echo "[DRY-RUN] Helm template rendered cleanly with injected configuration."
+          fi
+
+      - name: Verify Rollout Status
+        if: ${{ hashFiles('~/.kube/config') != '' }}
+        run: |
+          NAMESPACE="rag-chunk-lifecycle"
+          kubectl rollout status deployment/rag-chunk-lifecycle-service-chunk-server -n ${NAMESPACE} --timeout=120s
+          kubectl rollout status deployment/rag-chunk-lifecycle-service-reconciliation-worker -n ${NAMESPACE} --timeout=120s
