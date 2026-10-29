@@ -5,7 +5,10 @@ metadata:
   labels:
     {{- include "rag-chunk-lifecycle-service.labels" . | nindent 4 }}
 data:
-  HTTP_PORT: {{ .Values.env.httpPort | quote }}
-  GRPC_PORT: {{ .Values.env.grpcPort | quote }}
-  LOG_LEVEL: {{ .Values.env.logLevel | quote }}
-  REDIS_ADDR: {{ .Values.config.redisAddr | quote }}
+  PORT: {{ default "8080" (get .Values.env "PORT") | quote }}
+  GRPC_PORT: {{ default "50051" (get .Values.env "GRPC_PORT") | quote }}
+  {{- range $key, $val := .Values.env }}
+  {{- if and (ne $key "secretName") (ne $key "PORT") (ne $key "GRPC_PORT") (ne $val nil) }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}

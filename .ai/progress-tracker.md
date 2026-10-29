@@ -107,6 +107,14 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Defined `command.ErrPoolSaturation` and `command.IsPoolSaturated` in `internal/application/command/ingest_chunk_batch.go` to confirm pool saturation without treating standalone `context.DeadlineExceeded` as saturation.
   - Added unit test cases in `test/unit/grpc_chunk_handler_test.go` verifying saturation error classification, deadline exceeded isolation, and generic error handling.
 
+- [x] **Automated Environment Synchronization & Deployment Enforcement**:
+  - Implemented dynamic ConfigMap ingestion (`deployments/helm/templates/configmap.yaml`) ranging over `.Values.env`, preserving `PORT` and `GRPC_PORT` fallbacks while filtering `secretName` and nil entries.
+  - Added ConfigMap SHA-256 checksum annotations to `deployment-chunk-server.yaml`, `deployment-reconciliation-worker.yaml`, and `rollout.yaml` triggering automatic rolling restarts on configuration updates.
+  - Implemented Python synchronization and zero-drift verification CLI (`scripts/sync_env_to_deployments.py`) supporting `--sync` and `--check-only`, credential sanitization (`PASSWORD`, `SECRET`, `TOKEN`, `KEY`), and `secretName` preservation.
+  - Implemented Git pre-commit enforcement hook (`.git/hooks/pre-commit`) running `--check-only` prior to commit completion.
+  - Updated developer documentation header in `.env.example` designating `.env.prod` as single source of truth for deployments.
+  - Created automated test suite (`test/test_sync_env_to_deployments.py`) verifying drift detection, synchronization idempotency, and credential filtering.
+
 ---
 
 ## Architecture Decisions (ADRs)
