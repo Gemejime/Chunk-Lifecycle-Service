@@ -1,4 +1,4 @@
-{{- if not .Values.canary.enabled -}}
+{{- if or (not .Values.canary.enabled) (not .Values.canary.removeDeployment) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,6 +17,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

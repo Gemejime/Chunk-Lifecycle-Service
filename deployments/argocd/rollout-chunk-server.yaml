@@ -22,7 +22,7 @@ spec:
           - templateName: chunk-server-canary-analysis
         args:
           - name: service-name
-            value: rag-chunk-lifecycle-service-chunk-server
+            value: rag-chunk-lifecycle-service-chunk-server-canary
       steps:
         # Step 1: 10% canary traffic with verification pause
         - setWeight: 10

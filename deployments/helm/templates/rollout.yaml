@@ -16,12 +16,20 @@ spec:
     canary:
       stableService: {{ include "rag-chunk-lifecycle-service.fullname" . }}-chunk-server-stable
       canaryService: {{ include "rag-chunk-lifecycle-service.fullname" . }}-chunk-server-canary
+      {{- if .Values.canary.trafficRouting }}
+      trafficRouting:
+        {{- toYaml .Values.canary.trafficRouting | nindent 8 }}
+      {{- else }}
+      trafficRouting:
+        nginx:
+          stableIngress: {{ include "rag-chunk-lifecycle-service.fullname" . }}
+      {{- end }}
       analysis:
         templates:
           - templateName: chunk-server-canary-analysis
         args:
           - name: service-name
-            value: {{ include "rag-chunk-lifecycle-service.fullname" . }}-chunk-server
+            value: {{ include "rag-chunk-lifecycle-service.fullname" . }}-chunk-server-canary
       steps:
         # Step 1: 10% canary traffic with verification pause
         - setWeight: 10
@@ -35,6 +43,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
