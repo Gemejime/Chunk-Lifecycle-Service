@@ -120,6 +120,7 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Enhanced CI pipeline (`.github/workflows/ci.yml`) with automated zero-drift configuration verification and Python test execution gates.
   - Upgraded Helm secret template (`deployments/helm/templates/secret.yaml`) to dynamically inject `DATABASE_URL`, `REDIS_PASSWORD`, and `REDIS_URL`.
   - Authoritative enterprise secret manual created: [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) detailing architecture, secrets classification matrix, CI/CD injection pipelines, External Secrets Operator (ESO) GitOps patterns, and zero-downtime credential rotation runbooks.
+  - Addressed review findings: sanitized committed database/redis URLs from `values.yaml` and `.env.prod`, updated `scripts/sync_env_to_deployments.py` to filter credential-bearing URLs and sanitize drift output, added non-secret config source prerequisites to CI/CD workflows, enabled Secret checksum restart annotations across workloads, resolved HPA rollout targeting, rendered `AnalysisTemplate` in Helm with canary-scoped queries, and configured rollout traffic routing.
 
 ---
 

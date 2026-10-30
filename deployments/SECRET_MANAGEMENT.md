@@ -68,7 +68,7 @@ To maintain a zero-trust security posture and comply with SOC 2 / ISO 27001 requ
 
 ## 4. CI/CD Secret Injection via GitHub Actions
 
-Deployment automation is governed by [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+Deployment automation is governed by [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 
 ### Step-by-Step Injection Pipeline
 
@@ -226,9 +226,12 @@ If any credential is suspected to be exposed:
 3. **Trigger Emergency Redeploy**:
    - Execute `.github/workflows/deploy.yml` with `workflow_dispatch`.
 4. **Git History Sanitization** (if committed inadvertently):
-   - Use `git-filter-repo` to permanently erase the commit and history ref:
+   - First, revoke and rotate all exposed credentials at their provider sources before rewriting history.
+   - Identify all affected file paths containing secrets across git revisions (e.g. `deployments/helm/values.yaml`, `.env`, `.env.prod`, or other configuration templates).
+   - Use `git-filter-repo` to permanently erase the compromised paths or sanitize sensitive values from history refs:
      ```bash
-     git filter-repo --invert-paths --path .env
+     # Example removing all compromised file paths from full commit history:
+     git filter-repo --invert-paths --path .env --path .env.prod --path deployments/helm/values.yaml
      git push origin --force --all
      ```
 5. **Audit Access Logs**:

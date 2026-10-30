@@ -34,6 +34,9 @@ jobs:
       - name: Install Dependencies
         run: pip install pyyaml
 
+      - name: Prepare Environment Configuration Source
+        run: cp .env.example .env.prod
+
       - name: Verify Zero Drift (.env.prod vs values.yaml)
         run: python scripts/sync_env_to_deployments.py --check-only
 
@@ -57,15 +60,19 @@ jobs:
           version: v1.29.0
 
       - name: Mask Sensitive Secrets from Workflow Logs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
-          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
-            echo "::add-mask::${{ secrets.DATABASE_URL }}"
+          if [ -n "$DATABASE_URL" ]; then
+            echo "::add-mask::$DATABASE_URL"
           fi
-          if [ -n "${{ secrets.REDIS_PASSWORD }}" ]; then
-            echo "::add-mask::${{ secrets.REDIS_PASSWORD }}"
+          if [ -n "$REDIS_PASSWORD" ]; then
+            echo "::add-mask::$REDIS_PASSWORD"
           fi
-          if [ -n "${{ secrets.REDIS_URL }}" ]; then
-            echo "::add-mask::${{ secrets.REDIS_URL }}"
+          if [ -n "$REDIS_URL" ]; then
+            echo "::add-mask::$REDIS_URL"
           fi
           echo "[SECURED] Secret masking verified for standard outputs."
 
@@ -81,57 +88,82 @@ jobs:
           fi
 
       - name: Provision Kubernetes Secret (Inject Credentials)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           NAMESPACE="rag-chunk-lifecycle"
+          RELEASE_NAME="rag-chunk-lifecycle-service"
           SECRET_NAME="rag-chunk-lifecycle-service-secret"
 
           # Fallback values for CI dry-run if secrets are empty
-          DB_URL="${{ secrets.DATABASE_URL }}"
+          DB_URL="$DATABASE_URL"
           if [ -z "$DB_URL" ]; then
             DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
           fi
 
-          REDIS_PASS="${{ secrets.REDIS_PASSWORD }}"
-          REDIS_FULL_URL="${{ secrets.REDIS_URL }}"
+          REDIS_PASS="$REDIS_PASSWORD"
+          REDIS_FULL_URL="$REDIS_URL"
 
-          # Assemble kubectl command dynamically based on available secrets
-          SECRET_ARGS="DATABASE_URL=${DB_URL}"
+          # Assemble kubectl arguments as a quoted shell array preserving spaces
+          SECRET_ARGS=( "--from-literal=DATABASE_URL=${DB_URL}" )
           if [ -n "$REDIS_PASS" ]; then
-            SECRET_ARGS="${SECRET_ARGS} REDIS_PASSWORD=${REDIS_PASS}"
+            SECRET_ARGS+=( "--from-literal=REDIS_PASSWORD=${REDIS_PASS}" )
           fi
           if [ -n "$REDIS_FULL_URL" ]; then
-            SECRET_ARGS="${SECRET_ARGS} REDIS_URL=${REDIS_FULL_URL}"
+            SECRET_ARGS+=( "--from-literal=REDIS_URL=${REDIS_FULL_URL}" )
           fi
 
           if [ -f "$HOME/.kube/config" ]; then
             echo "[DEPLOY] Injecting Secret into Kubernetes namespace ${NAMESPACE}..."
-            kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret generic ${SECRET_NAME} \
-              --namespace ${NAMESPACE} \
-              $(for arg in ${SECRET_ARGS}; do echo "--from-literal=${arg}"; done) \
-              --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create secret generic "${SECRET_NAME}" \
+              --namespace "${NAMESPACE}" \
+              "${SECRET_ARGS[@]}" \
+              --dry-run=client -o yaml | \
+            kubectl annotate --local -f - "meta.helm.sh/release-name=${RELEASE_NAME}" "meta.helm.sh/release-namespace=${NAMESPACE}" -o yaml | \
+            kubectl label --local -f - "app.kubernetes.io/managed-by=Helm" -o yaml | \
+            kubectl apply -f -
           else
             echo "[DRY-RUN] Verifying secret manifest compilation syntax..."
-            kubectl create secret generic ${SECRET_NAME} \
-              --namespace ${NAMESPACE} \
-              $(for arg in ${SECRET_ARGS}; do echo "--from-literal=${arg}"; done) \
+            kubectl create secret generic "${SECRET_NAME}" \
+              --namespace "${NAMESPACE}" \
+              "${SECRET_ARGS[@]}" \
               --dry-run=client -o yaml > /dev/null
             echo "[DRY-RUN] Secret manifest successfully compiled without leaking credentials."
           fi
 
       - name: Deploy Helm Chart with Injected Secret Bindings
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           NAMESPACE="rag-chunk-lifecycle"
           RELEASE_NAME="rag-chunk-lifecycle-service"
+          TARGET_ENV="${{ inputs.environment || 'production' }}"
 
-          DB_URL="${{ secrets.DATABASE_URL }}"
+          DB_URL="$DATABASE_URL"
           if [ -z "$DB_URL" ]; then
             DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
           fi
 
+          REDIS_PASS="$REDIS_PASSWORD"
+          REDIS_FULL_URL="$REDIS_URL"
+
           HELM_EXTRA_ARGS=""
-          if [ -n "${{ secrets.REDIS_PASSWORD }}" ]; then
-            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.redisPassword=${{ secrets.REDIS_PASSWORD }}"
+          if [ -n "$REDIS_PASS" ]; then
+            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.redisPassword=${REDIS_PASS}"
+          fi
+          if [ -n "$REDIS_FULL_URL" ]; then
+            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.REDIS_URL=${REDIS_FULL_URL}"
+          fi
+
+          # Apply environment-specific overrides for staging vs production
+          if [ "$TARGET_ENV" = "staging" ]; then
+            echo "[INFO] Configuring staging non-secret Redis settings..."
+            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set env.ENVIRONMENT=staging --set env.REDIS_ADDR=redis-staging.cache.svc.cluster.local:6379 --set config.redisAddr=redis-staging.cache.svc.cluster.local:6379"
           fi
 
           if [ -f "$HOME/.kube/config" ]; then

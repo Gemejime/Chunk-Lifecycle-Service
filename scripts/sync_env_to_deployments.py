@@ -30,12 +30,22 @@ if hasattr(sys.stderr, "reconfigure"):
 
 # Patterns identifying sensitive credentials that must never be written to values.yaml
 SENSITIVE_PATTERNS = ("PASSWORD", "SECRET", "TOKEN", "KEY")
+CREDENTIAL_URL_PATTERN = re.compile(r"://[^/\s:]*:[^/\s@]+@")
 
 
-def is_sensitive(key: str) -> bool:
-    """Return True if the key contains any sensitive credential keywords."""
+def is_credential_url(val: str) -> bool:
+    """Return True if the value contains a URL with embedded credentials."""
+    return bool(CREDENTIAL_URL_PATTERN.search(val))
+
+
+def is_sensitive(key: str, val: str = "") -> bool:
+    """Return True if the key contains sensitive credential keywords or value contains credentials."""
     upper = key.upper()
-    return any(p in upper for p in SENSITIVE_PATTERNS)
+    if any(p in upper for p in SENSITIVE_PATTERNS):
+        return True
+    if val and is_credential_url(val):
+        return True
+    return False
 
 
 def parse_env_file(filepath: Path) -> dict[str, str]:
@@ -68,8 +78,8 @@ def parse_env_file(filepath: Path) -> dict[str, str]:
 
 
 def get_syncable_env(env_vars: dict[str, str]) -> dict[str, str]:
-    """Filter out sensitive keys so credentials are never written to values.yaml."""
-    return {k: v for k, v in env_vars.items() if not is_sensitive(k)}
+    """Filter out sensitive keys and credential-bearing URL values so credentials are never written to values.yaml."""
+    return {k: v for k, v in env_vars.items() if not is_sensitive(k, v)}
 
 
 def resolve_path(given_path: str, repo_root: Path) -> Path:
@@ -81,6 +91,13 @@ def resolve_path(given_path: str, repo_root: Path) -> Path:
     if cwd_path.exists():
         return cwd_path
     root_path = repo_root / p
+    if root_path.exists():
+        return root_path
+    # Fallback to .env.example if default .env.prod is absent
+    if given_path == ".env.prod":
+        example_path = repo_root / ".env.example"
+        if example_path.exists():
+            return example_path
     return root_path
 
 
@@ -130,8 +147,8 @@ def check_drift(env_path: Path, values_path: Path) -> int:
             print(f"  Unexpected in values.yaml ({len(extra_in_values)}): {', '.join(extra_in_values)}", file=sys.stderr)
         if mismatched:
             print(f"  Value mismatches ({len(mismatched)}):", file=sys.stderr)
-            for k, prod_v, val_v in mismatched:
-                print(f"    - {k}: .env.prod={prod_v!r} vs values.yaml={val_v!r}", file=sys.stderr)
+            for k, _, _ in mismatched:
+                print(f"    - {k}: value mismatch detected", file=sys.stderr)
         print("-" * 80, file=sys.stderr)
         print("To synchronize, run:", file=sys.stderr)
         print("    python scripts/sync_env_to_deployments.py --sync", file=sys.stderr)
@@ -219,12 +236,12 @@ def sync_env(env_path: Path, values_path: Path) -> int:
     with open(values_path, "w", encoding="utf-8") as f:
         f.write(updated_content)
 
-    sensitive_excluded = [k for k in prod_raw if is_sensitive(k)]
+    sensitive_excluded = [k for k, v in prod_raw.items() if is_sensitive(k, v)]
     print(f"[SUCCESS] Synchronized {len(syncable_prod)} environment variables from {env_path} to {values_path}.")
     if existing_secret_name:
         print(f"  - Preserved secretName: {existing_secret_name}")
     if sensitive_excluded:
-        print(f"  - Excluded {len(sensitive_excluded)} sensitive keys: {', '.join(sensitive_excluded)}")
+        print(f"  - Excluded {len(sensitive_excluded)} sensitive keys and credential URLs: {', '.join(sensitive_excluded)}")
 
     return 0
 

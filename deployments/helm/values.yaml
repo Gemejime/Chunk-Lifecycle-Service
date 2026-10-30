@@ -97,12 +97,11 @@ nodeSelector: {}
 tolerations: []
 
 env:
-  DATABASE_URL: "postgresql://neondb_owner:npg_3qgHMfcPV6oS@ep-gentle-morning-b7w0zm3f-pooler.c-13.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
   ENVIRONMENT: "production"
   GRPC_PORT: "50051"
   HTTP_PORT: "8080"
   LOG_LEVEL: "info"
-  REDIS_ADDR: "rediss://default:gQAAAAAAAjfpAAIgcDE2MGQ4NzAxMTk0NmE0MWZhOTZhNDRlMTAwNGNkOWI1ZQ@regular-stud-145385.upstash.io:6379"
+  REDIS_ADDR: "redis-cluster.cache.svc.cluster.local:6379"
 
 config:
   # Injected via external secret; ensure connection string enforces TLS with sslmode=require
@@ -112,12 +111,15 @@ config:
 secrets:
   databasePassword: ""
   redisPassword: ""
+  REDIS_URL: ""
 
 # Canary progressive delivery configuration
 canary:
   enabled: false
+  removeDeployment: false
   analysis:
     enabled: true
+  trafficRouting: {}
 
 # Prometheus alerting rule configuration
 prometheusRule:

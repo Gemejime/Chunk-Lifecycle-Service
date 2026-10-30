@@ -45,11 +45,14 @@ jobs:
       - name: Install Python Dependencies
         run: pip install pyyaml
 
+      - name: Prepare Environment Configuration Source
+        run: cp .env.example .env.prod
+
       - name: Verify Environment Sync (Zero Drift)
         run: python scripts/sync_env_to_deployments.py --check-only
 
       - name: Run Python Sync Unit Tests
-        run: python test/test_sync_env_to_deployments.py
+        run: python test/unit/test_sync_env_to_deployments.py
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7

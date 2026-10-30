@@ -45,7 +45,7 @@ class TestSyncEnvToDeployments(unittest.TestCase):
         self.assertTrue(is_sensitive("API_KEY"))
         self.assertTrue(is_sensitive("PRIVATE_KEY"))
 
-        # Non-sensitive keys
+        # Non-sensitive keys (without credential values)
         self.assertFalse(is_sensitive("ENVIRONMENT"))
         self.assertFalse(is_sensitive("HTTP_PORT"))
         self.assertFalse(is_sensitive("PORT"))
@@ -53,6 +53,13 @@ class TestSyncEnvToDeployments(unittest.TestCase):
         self.assertFalse(is_sensitive("LOG_LEVEL"))
         self.assertFalse(is_sensitive("REDIS_ADDR"))
         self.assertFalse(is_sensitive("DATABASE_URL"))
+
+        # Credential-bearing URL values
+        self.assertTrue(is_sensitive("DATABASE_URL", "postgresql://user:pass@host/db"))
+        self.assertTrue(is_sensitive("REDIS_ADDR", "rediss://default:secret@host:6379"))
+        self.assertTrue(is_sensitive("APP_URL", "https://admin:token123@api.internal"))
+        self.assertFalse(is_sensitive("REDIS_ADDR", "redis-cluster.cache.svc.cluster.local:6379"))
+        self.assertFalse(is_sensitive("HTTP_URL", "http://prometheus:9090"))
 
     def test_parse_env_file(self):
         with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as f:
@@ -87,14 +94,39 @@ EMPTY_VAL=
             "AUTH_TOKEN": "secret_token",
             "API_KEY": "secret_key",
             "OAUTH_SECRET": "secret_oauth",
+            "DATABASE_URL": "postgresql://neondb_owner:mypassword@ep-host.tech/db",
+            "REDIS_ADDR": "redis-cluster.cache.svc.cluster.local:6379",
         }
         syncable = get_syncable_env(env)
         self.assertIn("ENVIRONMENT", syncable)
         self.assertIn("HTTP_PORT", syncable)
+        self.assertIn("REDIS_ADDR", syncable)
         self.assertNotIn("DB_PASSWORD", syncable)
         self.assertNotIn("AUTH_TOKEN", syncable)
         self.assertNotIn("API_KEY", syncable)
         self.assertNotIn("OAUTH_SECRET", syncable)
+        self.assertNotIn("DATABASE_URL", syncable)
+
+    def test_check_drift_sanitized_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            env_file = tmp_path / ".env.prod"
+            values_file = tmp_path / "values.yaml"
+
+            env_file.write_text("ENVIRONMENT=production\nHTTP_PORT=8080\n", encoding="utf-8")
+            values_file.write_text("env:\n  ENVIRONMENT: staging\n  HTTP_PORT: '8080'\n", encoding="utf-8")
+
+            # Capture stderr
+            import io
+            from contextlib import redirect_stderr
+            f_err = io.StringIO()
+            with redirect_stderr(f_err):
+                ret = check_drift(env_file, values_file)
+            self.assertEqual(ret, 1)
+            output = f_err.getvalue()
+            self.assertIn("ENVIRONMENT: value mismatch detected", output)
+            self.assertNotIn("ENVIRONMENT='production'", output)
+            self.assertNotIn("ENVIRONMENT='staging'", output)
 
     def test_sync_preserves_secret_name_and_blocks(self):
         with tempfile.TemporaryDirectory() as tmpdir:
