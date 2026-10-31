@@ -77,13 +77,16 @@ jobs:
           echo "[SECURED] Secret masking verified for standard outputs."
 
       - name: Configure Kubeconfig
+        id: kubeconfig
         run: |
           if [ -n "${{ secrets.KUBECONFIG }}" ]; then
             mkdir -p $HOME/.kube
             echo "${{ secrets.KUBECONFIG }}" > $HOME/.kube/config
             chmod 600 $HOME/.kube/config
+            echo "configured=true" >> "$GITHUB_OUTPUT"
             echo "Kubeconfig configured from repository secrets."
           else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "[INFO] KUBECONFIG secret not set; executing dry-run manifest compilation."
           fi
 
@@ -100,6 +103,10 @@ jobs:
           # Fallback values for CI dry-run if secrets are empty
           DB_URL="$DATABASE_URL"
           if [ -z "$DB_URL" ]; then
+            if [ -f "$HOME/.kube/config" ]; then
+              echo "::error::DATABASE_URL secret is required when deploying to a cluster." >&2
+              exit 1
+            fi
             DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
           fi
 
@@ -146,46 +153,56 @@ jobs:
 
           DB_URL="$DATABASE_URL"
           if [ -z "$DB_URL" ]; then
+            if [ -f "$HOME/.kube/config" ]; then
+              echo "::error::DATABASE_URL secret is required when deploying to a cluster." >&2
+              exit 1
+            fi
             DB_URL="postgres://chunk_user:ci_placeholder@pgbouncer.database.svc.cluster.local:6432/chunk_lifecycle?sslmode=require"
           fi
 
           REDIS_PASS="$REDIS_PASSWORD"
           REDIS_FULL_URL="$REDIS_URL"
 
-          HELM_EXTRA_ARGS=""
+          HELM_EXTRA_ARGS=()
           if [ -n "$REDIS_PASS" ]; then
-            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.redisPassword=${REDIS_PASS}"
+            HELM_EXTRA_ARGS+=( "--set-string" "secrets.redisPassword=${REDIS_PASS//,/\\,}" )
           fi
           if [ -n "$REDIS_FULL_URL" ]; then
-            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set-string secrets.REDIS_URL=${REDIS_FULL_URL}"
+            HELM_EXTRA_ARGS+=( "--set-string" "secrets.REDIS_URL=${REDIS_FULL_URL//,/\\,}" )
           fi
 
           # Apply environment-specific overrides for staging vs production
           if [ "$TARGET_ENV" = "staging" ]; then
             echo "[INFO] Configuring staging non-secret Redis settings..."
-            HELM_EXTRA_ARGS="${HELM_EXTRA_ARGS} --set env.ENVIRONMENT=staging --set env.REDIS_ADDR=redis-staging.cache.svc.cluster.local:6379 --set config.redisAddr=redis-staging.cache.svc.cluster.local:6379"
+            HELM_EXTRA_ARGS+=(
+              "--set" "env.ENVIRONMENT=staging"
+              "--set" "env.REDIS_ADDR=redis-staging.cache.svc.cluster.local:6379"
+              "--set" "config.redisAddr=redis-staging.cache.svc.cluster.local:6379"
+            )
           fi
+
+          ESC_DB_URL="${DB_URL//,/\\,}"
 
           if [ -f "$HOME/.kube/config" ]; then
             echo "[DEPLOY] Executing Helm upgrade --install..."
-            helm upgrade --install ${RELEASE_NAME} deployments/helm \
-              --namespace ${NAMESPACE} \
+            helm upgrade --install "${RELEASE_NAME}" deployments/helm \
+              --namespace "${NAMESPACE}" \
               --create-namespace \
-              --set-string config.databaseUrl="${DB_URL}" \
-              ${HELM_EXTRA_ARGS} \
+              --set-string "config.databaseUrl=${ESC_DB_URL}" \
+              "${HELM_EXTRA_ARGS[@]}" \
               --wait \
               --timeout 5m0s
           else
             echo "[DRY-RUN] Executing Helm template validation with secret bindings..."
-            helm template ${RELEASE_NAME} deployments/helm \
-              --namespace ${NAMESPACE} \
-              --set-string config.databaseUrl="${DB_URL}" \
-              ${HELM_EXTRA_ARGS} > /dev/null
+            helm template "${RELEASE_NAME}" deployments/helm \
+              --namespace "${NAMESPACE}" \
+              --set-string "config.databaseUrl=${ESC_DB_URL}" \
+              "${HELM_EXTRA_ARGS[@]}" > /dev/null
             echo "[DRY-RUN] Helm template rendered cleanly with injected configuration."
           fi
 
       - name: Verify Rollout Status
-        if: ${{ hashFiles('~/.kube/config') != '' }}
+        if: steps.kubeconfig.outputs.configured == 'true'
         run: |
           NAMESPACE="rag-chunk-lifecycle"
           kubectl rollout status deployment/rag-chunk-lifecycle-service-chunk-server -n ${NAMESPACE} --timeout=120s

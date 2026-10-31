@@ -125,8 +125,8 @@ EMPTY_VAL=
             self.assertEqual(ret, 1)
             output = f_err.getvalue()
             self.assertIn("ENVIRONMENT: value mismatch detected", output)
-            self.assertNotIn("ENVIRONMENT='production'", output)
-            self.assertNotIn("ENVIRONMENT='staging'", output)
+            self.assertNotIn("production", output)
+            self.assertNotIn("staging", output)
 
     def test_sync_preserves_secret_name_and_blocks(self):
         with tempfile.TemporaryDirectory() as tmpdir:
