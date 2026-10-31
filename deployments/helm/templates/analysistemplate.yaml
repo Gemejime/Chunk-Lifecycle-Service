@@ -19,9 +19,9 @@ spec:
       failureLimit: 2
       provider:
         prometheus:
-          address: "{{args.prometheus-url}}"
+          address: "{{ "{{args.prometheus-url}}" }}"
           query: |
-            histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket{service="{{args.service-name}}"}[5m])) by (le))
+            histogram_quantile(0.99, sum(rate(chunk_compilation_duration_seconds_bucket{service="{{ "{{args.service-name}}" }}"}[5m])) by (le))
 
     # SLO 2: Quarantine rate <= 2% of active ingestion stream runs (scoped to canary service)
     - name: quarantine-budget
@@ -30,8 +30,8 @@ spec:
       failureLimit: 2
       provider:
         prometheus:
-          address: "{{args.prometheus-url}}"
+          address: "{{ "{{args.prometheus-url}}" }}"
           query: |
-            (sum(rate(chunk_section_stale_quarantine_total{service="{{args.service-name}}"}[10m])) / clamp_min(sum(rate(chunk_ingestion_chunks_per_second{service="{{args.service-name}}"}[10m])), 1))
+            (sum(rate(chunk_section_stale_quarantine_total{service="{{ "{{args.service-name}}" }}"}[10m])) / clamp_min(sum(rate(chunk_ingestion_chunks_per_second{service="{{ "{{args.service-name}}" }}"}[10m])), 1))
 {{- end }}
 

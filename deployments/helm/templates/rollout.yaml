@@ -19,17 +19,15 @@ spec:
       {{- if .Values.canary.trafficRouting }}
       trafficRouting:
         {{- toYaml .Values.canary.trafficRouting | nindent 8 }}
-      {{- else }}
-      trafficRouting:
-        nginx:
-          stableIngress: {{ include "rag-chunk-lifecycle-service.fullname" . }}
       {{- end }}
+      {{- if .Values.canary.analysis.enabled }}
       analysis:
         templates:
           - templateName: chunk-server-canary-analysis
         args:
           - name: service-name
             value: {{ include "rag-chunk-lifecycle-service.fullname" . }}-chunk-server-canary
+      {{- end }}
       steps:
         # Step 1: 10% canary traffic with verification pause
         - setWeight: 10
