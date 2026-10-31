@@ -50,6 +50,11 @@ profile.out
 *.swo
 *~
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Operating System files
 .DS_Store
 Thumbs.db

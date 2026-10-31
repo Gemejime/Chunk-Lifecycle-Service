@@ -37,6 +37,23 @@ jobs:
           go install golang.org/x/tools/cmd/goimports@latest
           test -z "$(goimports -l .)" || (echo "Unformatted Go files detected:" && goimports -d . && exit 1)
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: pip install pyyaml
+
+      - name: Prepare Environment Configuration Source
+        run: cp .env.example .env.prod
+
+      - name: Verify Environment Sync (Zero Drift)
+        run: python scripts/sync_env_to_deployments.py --check-only
+
+      - name: Run Python Sync Unit Tests
+        run: python test/unit/test_sync_env_to_deployments.py
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:

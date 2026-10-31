@@ -107,6 +107,28 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Defined `command.ErrPoolSaturation` and `command.IsPoolSaturated` in `internal/application/command/ingest_chunk_batch.go` to confirm pool saturation without treating standalone `context.DeadlineExceeded` as saturation.
   - Added unit test cases in `test/unit/grpc_chunk_handler_test.go` verifying saturation error classification, deadline exceeded isolation, and generic error handling.
 
+- [x] **Automated Environment Synchronization & Deployment Enforcement**:
+  - Implemented dynamic ConfigMap ingestion (`deployments/helm/templates/configmap.yaml`) ranging over `.Values.env`, preserving `PORT` and `GRPC_PORT` fallbacks while filtering `secretName` and nil entries.
+  - Added ConfigMap SHA-256 checksum annotations to `deployment-chunk-server.yaml`, `deployment-reconciliation-worker.yaml`, and `rollout.yaml` triggering automatic rolling restarts on configuration updates.
+  - Implemented Python synchronization and zero-drift verification CLI (`scripts/sync_env_to_deployments.py`) supporting `--sync` and `--check-only`, credential sanitization (`PASSWORD`, `SECRET`, `TOKEN`, `KEY`), and `secretName` preservation.
+  - Implemented Git pre-commit enforcement hook (`.git/hooks/pre-commit`) running `--check-only` prior to commit completion.
+  - Updated developer documentation header in `.env.example` designating `.env.prod` as single source of truth for deployments.
+  - Created automated test suite (`test/test_sync_env_to_deployments.py`) verifying drift detection, synchronization idempotency, and credential filtering.
+
+- [x] **CI/CD Secret Injection & Security Hardening**:
+  - Implemented CI/CD secret injection workflow (`.github/workflows/deploy.yml`) supporting GitHub Actions environments (`staging`, `production`), secret log masking (`::add-mask::`), dynamic Kubernetes Secret synthesis (`rag-chunk-lifecycle-service-secret`), and Helm deployment overrides.
+  - Enhanced CI pipeline (`.github/workflows/ci.yml`) with automated zero-drift configuration verification and Python test execution gates.
+  - Upgraded Helm secret template (`deployments/helm/templates/secret.yaml`) to dynamically inject `DATABASE_URL`, `REDIS_PASSWORD`, and `REDIS_URL`.
+  - Authoritative enterprise secret manual created: [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) detailing architecture, secrets classification matrix, CI/CD injection pipelines, External Secrets Operator (ESO) GitOps patterns, and zero-downtime credential rotation runbooks.
+  - Addressed review findings: sanitized committed database/redis URLs from `values.yaml` and `.env.prod`, updated `scripts/sync_env_to_deployments.py` to filter credential-bearing URLs and sanitize drift output, added non-secret config source prerequisites to CI/CD workflows, enabled Secret checksum restart annotations across workloads, resolved HPA rollout targeting, rendered `AnalysisTemplate` in Helm with canary-scoped queries, and configured rollout traffic routing.
+- [x] **Helm Template & Deployment Pipeline Hardening**:
+  - Escaped Argo Rollouts AnalysisTemplate runtime query arguments (`{{args.prometheus-url}}`, `{{args.service-name}}`) so Go template engine renders them literally without Helm parse errors.
+  - Aligned Rollout `analysis:` block to render conditionally only when `canary.analysis.enabled` is true.
+  - Guarded chunk-server Deployment to render only when `canary.enabled` is false, preventing duplicate workloads when canary rollout is active.
+  - Updated `rollout.yaml` to require an explicitly configured router without unconditionally defaulting to nonexistent NGINX stable Ingress.
+  - Hardened `.github/workflows/deploy.yml`: converted `HELM_EXTRA_ARGS` to quoted Bash array, escaped commas in `--set-string` values, failed step on missing `DATABASE_URL` during live cluster deployments, and replaced brittle `hashFiles` check with step output from kubeconfig configuration.
+  - Strengthened `test_sync_env_to_deployments.py` negative assertions to verify bare "production" and "staging" values do not leak into CLI drift logs.
+
 ---
 
 ## Architecture Decisions (ADRs)
