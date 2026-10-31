@@ -121,6 +121,13 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Upgraded Helm secret template (`deployments/helm/templates/secret.yaml`) to dynamically inject `DATABASE_URL`, `REDIS_PASSWORD`, and `REDIS_URL`.
   - Authoritative enterprise secret manual created: [`SECRET_MANAGEMENT.md`](SECRET_MANAGEMENT.md) detailing architecture, secrets classification matrix, CI/CD injection pipelines, External Secrets Operator (ESO) GitOps patterns, and zero-downtime credential rotation runbooks.
   - Addressed review findings: sanitized committed database/redis URLs from `values.yaml` and `.env.prod`, updated `scripts/sync_env_to_deployments.py` to filter credential-bearing URLs and sanitize drift output, added non-secret config source prerequisites to CI/CD workflows, enabled Secret checksum restart annotations across workloads, resolved HPA rollout targeting, rendered `AnalysisTemplate` in Helm with canary-scoped queries, and configured rollout traffic routing.
+- [x] **Helm Template & Deployment Pipeline Hardening**:
+  - Escaped Argo Rollouts AnalysisTemplate runtime query arguments (`{{args.prometheus-url}}`, `{{args.service-name}}`) so Go template engine renders them literally without Helm parse errors.
+  - Aligned Rollout `analysis:` block to render conditionally only when `canary.analysis.enabled` is true.
+  - Guarded chunk-server Deployment to render only when `canary.enabled` is false, preventing duplicate workloads when canary rollout is active.
+  - Updated `rollout.yaml` to require an explicitly configured router without unconditionally defaulting to nonexistent NGINX stable Ingress.
+  - Hardened `.github/workflows/deploy.yml`: converted `HELM_EXTRA_ARGS` to quoted Bash array, escaped commas in `--set-string` values, failed step on missing `DATABASE_URL` during live cluster deployments, and replaced brittle `hashFiles` check with step output from kubeconfig configuration.
+  - Strengthened `test_sync_env_to_deployments.py` negative assertions to verify bare "production" and "staging" values do not leak into CLI drift logs.
 
 ---
 
