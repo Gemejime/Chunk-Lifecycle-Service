@@ -138,6 +138,7 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Wired microservice configuration across `.env.prod`, `.env.example`, and Helm `values.yaml` with headless seed addresses (`rag-chunk-lifecycle-service-redis-{0..2}`).
   - Enhanced Redis Go client (`internal/infrastructure/cache/redis/client.go`) to parse `REDIS_CLUSTER_ADDRS` into `redis.ClusterOptions`, instantiating high-performance `*redis.ClusterClient` with cluster slot routing while preserving standalone fallback.
   - Added unit test suite in `test/unit/redis_client_test.go` verifying cluster options parsing, cluster client instantiation, and sanitized address logging.
+  - Hardened Redis cluster deployment across manifests, documentation, and client: aligned chart fullname (`rag-chunk-lifecycle-service-redis-redis-cluster`) in DNS seeds and rollout selectors; configured cluster seeds via `REDIS_ADDR` without default `REDIS_CLUSTER_ADDRS` shadowing; aligned Helm and Argo values to chart 11.0.8 `redis.configmap` and `redis.resources`; bound Docker Compose port to 127.0.0.1 with mandatory password; added Helm ownership metadata and REDIS_PASSWORD validation in deployment scripts; enabled cluster Upstash auto-TLS and non-split URL parsing; hardened Day-2 runbooks with in-cluster P99 latency probes, counter metric clarifications, and zero-downtime ACL rotation; added docstrings across unit test suites.
   - Verified zero configuration drift via `scripts/sync_env_to_deployments.py --check-only`.
 
 ---
