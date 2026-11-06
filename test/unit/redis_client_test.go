@@ -136,3 +136,59 @@ func TestRedisClient_ExplicitTLSWithRedisScheme(t *testing.T) {
 		t.Fatalf("expected TLSConfig to be configured when UseTLS is true")
 	}
 }
+
+func TestRedisClient_ClusterAddrs_FromEnv(t *testing.T) {
+	clusterSeed := "rag-chunk-lifecycle-service-redis-0:6379, rag-chunk-lifecycle-service-redis-1:6379,rag-chunk-lifecycle-service-redis-2:6379"
+	_ = os.Setenv("REDIS_CLUSTER_ADDRS", clusterSeed)
+	_ = os.Setenv("REDIS_PASSWORD", "clusterpassword")
+	defer func() {
+		_ = os.Unsetenv("REDIS_CLUSTER_ADDRS")
+		_ = os.Unsetenv("REDIS_PASSWORD")
+	}()
+
+	opts := redisCache.ClientOptionsFromEnv()
+	if len(opts.ClusterAddrs) != 3 {
+		t.Fatalf("expected 3 cluster addrs, got %d: %+v", len(opts.ClusterAddrs), opts.ClusterAddrs)
+	}
+	if opts.ClusterAddrs[0] != "rag-chunk-lifecycle-service-redis-0:6379" {
+		t.Errorf("unexpected first addr: %s", opts.ClusterAddrs[0])
+	}
+	if opts.ClusterAddrs[1] != "rag-chunk-lifecycle-service-redis-1:6379" {
+		t.Errorf("unexpected second addr: %s", opts.ClusterAddrs[1])
+	}
+	if opts.Password != "clusterpassword" {
+		t.Errorf("unexpected password: %s", opts.Password)
+	}
+
+	client, err := redisCache.NewClient(opts)
+	if err != nil {
+		t.Fatalf("failed to initialize cluster client: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	clusterClient, ok := client.(*redis.ClusterClient)
+	if !ok {
+		t.Fatalf("expected *redis.ClusterClient, got %T", client)
+	}
+	if len(clusterClient.Options().Addrs) != 3 {
+		t.Errorf("expected 3 cluster client addrs, got %d", len(clusterClient.Options().Addrs))
+	}
+}
+
+func TestRedisClient_SanitizeClusterAddrs(t *testing.T) {
+	opts := redisCache.ClientOptions{
+		ClusterAddrs: []string{
+			"redis-0.internal:6379",
+			"redis-1.internal:6379",
+		},
+		Password: "supersecretpassword",
+	}
+
+	sanitized := redisCache.SanitizeRedisTarget(opts)
+	if sanitized != "redis-0.internal:6379,redis-1.internal:6379" {
+		t.Fatalf("unexpected sanitized cluster target: %s", sanitized)
+	}
+	if strings.Contains(sanitized, "supersecretpassword") {
+		t.Fatalf("password leaked in sanitized string: %s", sanitized)
+	}
+}

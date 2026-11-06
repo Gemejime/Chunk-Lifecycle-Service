@@ -15,28 +15,49 @@ import (
 
 // ClientOptions holds configuration parameters for instantiating a Redis client.
 type ClientOptions struct {
-	URL      string
-	Addr     string
-	Username string
-	Password string
-	UseTLS   bool
+	URL          string
+	Addr         string
+	ClusterAddrs []string
+	Username     string
+	Password     string
+	UseTLS       bool
 }
 
 // ClientOptionsFromEnv resolves Redis configuration from environment variables.
 // Priority:
 // 1. REDIS_URL if non-empty (e.g., "rediss://default:token@endpoint.upstash.io:6379" or "redis://...")
-// 2. REDIS_ADDR:
+// 2. REDIS_CLUSTER_ADDRS if non-empty (comma-separated list of cluster seed addresses, e.g., "node0:6379,node1:6379")
+// 3. REDIS_ADDR:
 //   - If REDIS_ADDR starts with "redis://" or "rediss://", it is treated as a connection URL.
+//   - If REDIS_ADDR contains commas, it is parsed as cluster seed addresses.
 //   - Otherwise, treated as host:port (e.g., "endpoint.upstash.io:6379" or "localhost:6379").
 //
-// 3. REDIS_USERNAME / REDIS_PASSWORD (optional credentials if host:port is used)
-// 4. REDIS_TLS (optional bool "true"/"1", or automatically enabled if host ends with ".upstash.io")
+// 4. REDIS_USERNAME / REDIS_PASSWORD (optional credentials if host:port or cluster is used)
+// 5. REDIS_TLS (optional bool "true"/"1", or automatically enabled if host ends with ".upstash.io")
 func ClientOptionsFromEnv() ClientOptions {
 	rawURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
 	rawAddr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
+	rawCluster := strings.TrimSpace(os.Getenv("REDIS_CLUSTER_ADDRS"))
 	user := strings.TrimSpace(os.Getenv("REDIS_USERNAME"))
 	pass := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
 	tlsEnv := strings.TrimSpace(os.Getenv("REDIS_TLS"))
+
+	var clusterAddrs []string
+	if rawCluster != "" {
+		for _, a := range strings.Split(rawCluster, ",") {
+			trimmed := strings.TrimSpace(a)
+			if trimmed != "" {
+				clusterAddrs = append(clusterAddrs, trimmed)
+			}
+		}
+	} else if strings.Contains(rawAddr, ",") {
+		for _, a := range strings.Split(rawAddr, ",") {
+			trimmed := strings.TrimSpace(a)
+			if trimmed != "" {
+				clusterAddrs = append(clusterAddrs, trimmed)
+			}
+		}
+	}
 
 	useTLS := false
 	if b, err := strconv.ParseBool(tlsEnv); err == nil && b {
@@ -44,16 +65,18 @@ func ClientOptionsFromEnv() ClientOptions {
 	}
 
 	return ClientOptions{
-		URL:      rawURL,
-		Addr:     rawAddr,
-		Username: user,
-		Password: pass,
-		UseTLS:   useTLS,
+		URL:          rawURL,
+		Addr:         rawAddr,
+		ClusterAddrs: clusterAddrs,
+		Username:     user,
+		Password:     pass,
+		UseTLS:       useTLS,
 	}
 }
 
 // NewClient initializes a redis.UniversalClient supporting:
 // - Connection URLs (redis:// and rediss:// with TLS, credentials, and db)
+// - Clustered Redis topologies via seed addresses (redis.ClusterClient)
 // - Host:port addresses with optional password and TLS (including Upstash auto-detection)
 // - Default fallback to localhost:6379
 func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
@@ -62,7 +85,7 @@ func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
 	}
 
 	target := opts.URL
-	if target == "" {
+	if target == "" && len(opts.ClusterAddrs) == 0 {
 		target = opts.Addr
 	}
 
@@ -95,7 +118,22 @@ func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
 		return redis.NewClient(parsedOpts), nil
 	}
 
-	// 2. Standalone host:port address resolution
+	// 2. Redis Cluster topology initialization
+	if len(opts.ClusterAddrs) > 0 {
+		clusterOpts := &redis.ClusterOptions{
+			Addrs:    opts.ClusterAddrs,
+			Username: opts.Username,
+			Password: opts.Password,
+		}
+		if opts.UseTLS {
+			clusterOpts.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
+		}
+		return redis.NewClusterClient(clusterOpts), nil
+	}
+
+	// 3. Standalone host:port address resolution
 	addr := opts.Addr
 	if addr == "" {
 		addr = "localhost:6379"
@@ -141,6 +179,13 @@ func SanitizeRedisAddr(raw string) string {
 func SanitizeRedisTarget(opts ClientOptions) string {
 	if opts.URL != "" {
 		return SanitizeRedisAddr(opts.URL)
+	}
+	if len(opts.ClusterAddrs) > 0 {
+		var sanitized []string
+		for _, a := range opts.ClusterAddrs {
+			sanitized = append(sanitized, SanitizeRedisAddr(a))
+		}
+		return strings.Join(sanitized, ",")
 	}
 	if opts.Addr != "" {
 		return SanitizeRedisAddr(opts.Addr)

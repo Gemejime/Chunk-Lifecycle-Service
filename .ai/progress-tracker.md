@@ -129,6 +129,17 @@ All 4 implementation phases of `rag-chunk-lifecycle-service` are complete, harde
   - Hardened `.github/workflows/deploy.yml`: converted `HELM_EXTRA_ARGS` to quoted Bash array, escaped commas in `--set-string` values, failed step on missing `DATABASE_URL` during live cluster deployments, and replaced brittle `hashFiles` check with step output from kubeconfig configuration.
   - Strengthened `test_sync_env_to_deployments.py` negative assertions to verify bare "production" and "staging" values do not leak into CLI drift logs.
 
+- [x] **Production-Grade Dedicated Bitnami Redis 7.2 Cluster Deployment**:
+  - Configured dedicated Bitnami Redis 7.2 Cluster Helm values (`deployments/helm/redis-cluster/values.yaml`): 6-node topology (3 Primaries + 3 Replicas), direct authentication binding to `rag-chunk-lifecycle-service-secret` (`REDIS_PASSWORD`), 100m/256Mi requests and 500m/1Gi limits, 5Gi AOF/RDB persistence, soft pod anti-affinity, and Prometheus metrics exporter on port 9121.
+  - Implemented declarative ArgoCD Application manifest (`deployments/argocd/redis-cluster-application.yaml`) targeting `charts.bitnami.com/bitnami` (v11.x) with automated sync (`prune: true`, `selfHeal: true`), and exponential backoff retry.
+  - Implemented local development Docker Compose environment (`deployments/docker/docker-compose.redis.yml`) with standalone `bitnami/redis:7.2-debian-12`, AOF persistence volume, password authentication, and automated health checks (`redis-cli ping`).
+  - Implemented cross-platform one-click deployment scripts (`scripts/deploy_redis_cluster.sh` and `scripts/deploy_redis_cluster.ps1`) automating prerequisite verification, namespace creation, secret validation, Helm deployment, StatefulSet rollout waiting, and `redis-cli cluster info` health check validating all 16,384 assigned slots.
+  - Authored comprehensive operational manual [`deployments/redis.md`](deployments/redis.md) covering cluster topology, sub-millisecond P99 latency architecture, headless DNS routing, workstation setup, ArgoCD GitOps sync, and Day-2 operational runbooks (health inspection, real-time latency verification, Prometheus scraping, and zero-downtime password rotation).
+  - Wired microservice configuration across `.env.prod`, `.env.example`, and Helm `values.yaml` with headless seed addresses (`rag-chunk-lifecycle-service-redis-{0..2}`).
+  - Enhanced Redis Go client (`internal/infrastructure/cache/redis/client.go`) to parse `REDIS_CLUSTER_ADDRS` into `redis.ClusterOptions`, instantiating high-performance `*redis.ClusterClient` with cluster slot routing while preserving standalone fallback.
+  - Added unit test suite in `test/unit/redis_client_test.go` verifying cluster options parsing, cluster client instantiation, and sanitized address logging.
+  - Verified zero configuration drift via `scripts/sync_env_to_deployments.py --check-only`.
+
 ---
 
 ## Architecture Decisions (ADRs)
