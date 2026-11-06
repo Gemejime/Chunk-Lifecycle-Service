@@ -50,7 +50,7 @@ func ClientOptionsFromEnv() ClientOptions {
 				clusterAddrs = append(clusterAddrs, trimmed)
 			}
 		}
-	} else if strings.Contains(rawAddr, ",") {
+	} else if !strings.HasPrefix(rawAddr, "redis://") && !strings.HasPrefix(rawAddr, "rediss://") && strings.Contains(rawAddr, ",") {
 		for _, a := range strings.Split(rawAddr, ",") {
 			trimmed := strings.TrimSpace(a)
 			if trimmed != "" {
@@ -125,7 +125,14 @@ func NewClient(opts ClientOptions) (redis.UniversalClient, error) {
 			Username: opts.Username,
 			Password: opts.Password,
 		}
-		if opts.UseTLS {
+		hasUpstash := false
+		for _, a := range opts.ClusterAddrs {
+			if strings.Contains(strings.ToLower(a), ".upstash.io") {
+				hasUpstash = true
+				break
+			}
+		}
+		if opts.UseTLS || hasUpstash {
 			clusterOpts.TLSConfig = &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			}
