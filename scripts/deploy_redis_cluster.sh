@@ -88,3 +88,4 @@ else
     echo -e "${RED}✗ Redis Cluster status check failed (state: $STATE, slots assigned: $SLOTS).${NC}" >&2
     exit 1
 fi
+

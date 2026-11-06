@@ -91,3 +91,4 @@ if ($state -eq "ok" -and $slots -eq "16384") {
     Write-Error "Redis Cluster status check failed (state: $state, slots assigned: $slots)."
     exit 1
 }
+

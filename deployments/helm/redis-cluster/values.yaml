@@ -118,3 +118,4 @@ metrics:
       prometheus.io/path: "/metrics"
   serviceMonitor:
     enabled: false
+

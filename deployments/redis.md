@@ -218,3 +218,4 @@ Key Prometheus alerting metrics:
    kubectl rollout restart deployment/rag-chunk-lifecycle-service-chunk-server -n rag-chunk-lifecycle
    kubectl rollout restart deployment/rag-chunk-lifecycle-service-reconciliation-worker -n rag-chunk-lifecycle
    ```
+
