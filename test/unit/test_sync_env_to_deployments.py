@@ -32,7 +32,10 @@ except ImportError:
 
 
 class TestSyncEnvToDeployments(unittest.TestCase):
+    """Test suite validating environment synchronization and secret sanitization logic."""
+
     def test_is_sensitive(self):
+        """Test identification of sensitive environment variable keys and credential URLs."""
         # Sensitive patterns: PASSWORD, SECRET, TOKEN, KEY
         self.assertTrue(is_sensitive("PASSWORD"))
         self.assertTrue(is_sensitive("DB_PASSWORD"))
@@ -62,6 +65,7 @@ class TestSyncEnvToDeployments(unittest.TestCase):
         self.assertFalse(is_sensitive("HTTP_URL", "http://prometheus:9090"))
 
     def test_parse_env_file(self):
+        """Test parsing of key-value pairs, comments, quotes, and empty values from env files."""
         with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as f:
             f.write("""
 # Sample Comment
@@ -87,6 +91,7 @@ EMPTY_VAL=
             temp_path.unlink(missing_ok=True)
 
     def test_get_syncable_env_excludes_credentials(self):
+        """Test filtering out sensitive keys and connection URLs bearing embedded credentials."""
         env = {
             "ENVIRONMENT": "production",
             "HTTP_PORT": "8080",
@@ -108,6 +113,7 @@ EMPTY_VAL=
         self.assertNotIn("DATABASE_URL", syncable)
 
     def test_check_drift_sanitized_output(self):
+        """Test drift verification and verify that secret values are omitted from diagnostic output."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             env_file = tmp_path / ".env.prod"
@@ -129,6 +135,7 @@ EMPTY_VAL=
             self.assertNotIn("staging", output)
 
     def test_sync_preserves_secret_name_and_blocks(self):
+        """Test that sync_env updates env variables while preserving comments, secretName, and other YAML blocks."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
             env_file = tmp_path / ".env.prod"
@@ -181,6 +188,7 @@ resources:
             self.assertNotIn("OLD_VAR", synced_content)
 
     def test_cli_flags(self):
+        """Test invoking sync_env_to_deployments.py via command-line flags."""
         script_path = REPO_ROOT / "scripts" / "sync_env_to_deployments.py"
         # Test --check-only on repo
         res = subprocess.run(
@@ -195,4 +203,3 @@ resources:
 
 if __name__ == "__main__":
     unittest.main()
-

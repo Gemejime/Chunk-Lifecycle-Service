@@ -247,6 +247,7 @@ def sync_env(env_path: Path, values_path: Path) -> int:
 
 
 def main() -> None:
+    """Parse command-line arguments and run synchronization or drift verification."""
     repo_root = Path(__file__).resolve().parent.parent
 
     parser = argparse.ArgumentParser(

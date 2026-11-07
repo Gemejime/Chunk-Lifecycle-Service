@@ -1,0 +1,101 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rag-chunk-lifecycle-service-redis
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: redis-cluster
+    app.kubernetes.io/part-of: rag-chunk-lifecycle-service
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    chart: redis-cluster
+    repoURL: https://charts.bitnami.com/bitnami
+    targetRevision: 11.0.8
+    helm:
+      releaseName: rag-chunk-lifecycle-service-redis
+      values: |
+        global:
+          redis:
+            existingSecret: "rag-chunk-lifecycle-service-secret"
+            existingSecretPasswordKey: "REDIS_PASSWORD"
+        image:
+          tag: "7.2.5-debian-12-r0"
+        cluster:
+          init: true
+          nodes: 6
+          replicas: 1
+          defaultStoreState: true
+        # NOTE: In a fresh namespace, provision rag-chunk-lifecycle-service-secret with REDIS_PASSWORD
+        # before applying this ArgoCD Application:
+        #   kubectl create namespace rag-chunk-lifecycle --dry-run=client -o yaml | kubectl apply -f -
+        #   kubectl create secret generic rag-chunk-lifecycle-service-secret -n rag-chunk-lifecycle \
+        #     --from-literal=REDIS_PASSWORD="<STRONG_PASSWORD>" --dry-run=client -o yaml | kubectl apply -f -
+        usePassword: true
+        existingSecret: "rag-chunk-lifecycle-service-secret"
+        existingSecretPasswordKey: "REDIS_PASSWORD"
+        redis:
+          port: 6379
+          busPort: 16379
+          clusterPort: 6379
+          configmap: |
+            appendonly yes
+            appendfsync everysec
+            maxmemory 800mb
+            maxmemory-policy noeviction
+            cluster-node-timeout 15000
+            cluster-require-full-coverage no
+            slowlog-log-slower-than 10000
+            slowlog-max-len 128
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+        persistence:
+          enabled: true
+          size: 5Gi
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: redis-cluster
+                  topologyKey: kubernetes.io/hostname
+        metrics:
+          enabled: true
+          containerPort: 9121
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9121"
+            prometheus.io/path: "/metrics"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rag-chunk-lifecycle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+

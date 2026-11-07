@@ -1,0 +1,32 @@
+services:
+  redis:
+    image: bitnami/redis:7.2-debian-12
+    container_name: rag-chunk-lifecycle-redis-dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be explicitly provided for local development}
+      - ALLOW_EMPTY_PASSWORD=no
+      - REDIS_AOF_ENABLED=yes
+      - REDIS_MAXMEMORY=512mb
+      - REDIS_MAXMEMORY_POLICY=noeviction
+    volumes:
+      - redis_data:/bitnami/redis/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - rag-dev-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  rag-dev-network:
+    driver: bridge
+
